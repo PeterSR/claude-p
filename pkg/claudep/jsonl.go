@@ -25,22 +25,51 @@ var nonTerminalStopReasons = map[string]struct{}{
 type jsonlEvent struct {
 	Type    string          `json:"type"`
 	Message json.RawMessage `json:"message,omitempty"`
-
-	// Pre-decoded for the cases we care about.
-	parsed *parsedMessage
 }
 
+// parsedMessage carries the assistant/user message fields we want to
+// echo into the stream-json events and aggregate into the result
+// envelope. Pointer fields are nil-able so we can preserve "unknown"
+// (emit JSON null) versus "zero" (emit 0) in the output.
 type parsedMessage struct {
-	ID         string          `json:"id,omitempty"`
-	Model      string          `json:"model,omitempty"`
-	StopReason string          `json:"stop_reason,omitempty"`
-	Content    []contentBlock  `json:"content,omitempty"`
-	Usage      json.RawMessage `json:"usage,omitempty"`
+	ID            string          `json:"id,omitempty"`
+	Model         string          `json:"model,omitempty"`
+	Role          string          `json:"role,omitempty"`
+	StopReason    string          `json:"stop_reason,omitempty"`
+	StopSequence  json.RawMessage `json:"stop_sequence,omitempty"`
+	StopDetails   json.RawMessage `json:"stop_details,omitempty"`
+	Content       []contentBlock  `json:"content,omitempty"`
+	Usage         *messageUsage   `json:"usage,omitempty"`
 }
 
 type contentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type  string          `json:"type"`
+	Text  string          `json:"text,omitempty"`
+	Extra json.RawMessage `json:"-"`
+}
+
+// messageUsage matches the per-message usage block claude writes inside
+// each assistant message. Pointer fields preserve "unknown" (null)
+// versus "zero present" (0).
+type messageUsage struct {
+	InputTokens              *int           `json:"input_tokens"`
+	CacheCreationInputTokens *int           `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     *int           `json:"cache_read_input_tokens"`
+	OutputTokens             *int           `json:"output_tokens"`
+	ServerToolUse            *serverToolUse `json:"server_tool_use,omitempty"`
+	ServiceTier              *string        `json:"service_tier"`
+	CacheCreation            *cacheCreation `json:"cache_creation,omitempty"`
+	Speed                    *string        `json:"speed,omitempty"`
+}
+
+type serverToolUse struct {
+	WebSearchRequests int `json:"web_search_requests"`
+	WebFetchRequests  int `json:"web_fetch_requests"`
+}
+
+type cacheCreation struct {
+	Ephemeral1hInputTokens *int `json:"ephemeral_1h_input_tokens"`
+	Ephemeral5mInputTokens *int `json:"ephemeral_5m_input_tokens"`
 }
 
 // tailEvent is what tailJSONL hands to its callback. raw is the full
@@ -50,6 +79,7 @@ type tailEvent struct {
 	Raw      []byte
 	Type     string
 	Message  json.RawMessage
+	Parsed   *parsedMessage
 	Terminal bool
 	Text     string
 }
@@ -88,16 +118,14 @@ func tailJSONL(ctx context.Context, path string, cb func(tailEvent) (done bool, 
 	var partial []byte
 
 	for {
-		// Read whatever's available.
 		line, err := r.ReadBytes('\n')
 		if len(line) > 0 {
 			full := append(partial, line...)
 			if full[len(full)-1] != '\n' {
-				// Partial line; remember the bytes and wait for more.
 				partial = full
 			} else {
 				partial = nil
-				cleaned := bytes_trimNewline(full)
+				cleaned := bytesTrimNewline(full)
 				ev, derr := decodeJSONLLine(cleaned)
 				if derr == nil {
 					done, cerr := cb(ev)
@@ -114,7 +142,6 @@ func tailJSONL(ctx context.Context, path string, cb func(tailEvent) (done bool, 
 			if !errors.Is(err, io.EOF) {
 				return err
 			}
-			// EOF on a file we're tailing — sleep and retry.
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -124,7 +151,7 @@ func tailJSONL(ctx context.Context, path string, cb func(tailEvent) (done bool, 
 	}
 }
 
-func bytes_trimNewline(b []byte) []byte {
+func bytesTrimNewline(b []byte) []byte {
 	for len(b) > 0 && (b[len(b)-1] == '\n' || b[len(b)-1] == '\r') {
 		b = b[:len(b)-1]
 	}
@@ -144,7 +171,7 @@ func decodeJSONLLine(line []byte) (tailEvent, error) {
 	if (ev.Type == "assistant" || ev.Type == "user") && len(ev.Message) > 0 {
 		var m parsedMessage
 		if err := json.Unmarshal(ev.Message, &m); err == nil {
-			ev.parsed = &m
+			out.Parsed = &m
 			out.Text = textFromContent(m.Content)
 			if ev.Type == "assistant" {
 				_, nonTerminal := nonTerminalStopReasons[m.StopReason]

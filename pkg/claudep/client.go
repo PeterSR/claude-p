@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/PeterSR/claude-p/pkg/claudepty"
@@ -81,13 +82,20 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("claudep: send prompt: %w", err)
 	}
 
-	em := newEmitter(opts.Stdout, opts.OutputFormat, sessionID)
+	cwd := opts.Cwd
+	if cwd == "" {
+		if wd, werr := os.Getwd(); werr == nil {
+			cwd = wd
+		}
+	}
+	em := newEmitter(opts.Stdout, opts.OutputFormat, sessionID, cwd)
 	em.init()
 
 	jsonlPath := claudepty.WaitForJSONL(sessionID, 10*time.Second)
 	if jsonlPath == "" {
 		return nil, fmt.Errorf("claudep: persisted JSONL never appeared for session %s — is claude actually running?", sessionID)
 	}
+	em.setJSONLPath(jsonlPath)
 
 	err = tailJSONL(runCtx, jsonlPath, func(ev tailEvent) (bool, error) {
 		em.handle(ev)
@@ -104,10 +112,20 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("claudep: %w", err)
 	}
 
-	em.finish()
-
-	// Cleanly exit the interactive session.
+	// Cleanly exit the interactive session before the final envelope —
+	// gives us a real exit code to report.
 	sess.Exit()
+	if waitErr := sess.WaitErr(); waitErr != nil {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			code := exitErr.ExitCode()
+			em.setExitCode(&code)
+		}
+	} else {
+		zero := 0
+		em.setExitCode(&zero)
+	}
+
+	em.finish()
 
 	return &Result{
 		SessionID:    sessionID,
