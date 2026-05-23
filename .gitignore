@@ -30,3 +30,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Agent scratch (notes, captures, in-flight investigations)
+.agent-workspace/
