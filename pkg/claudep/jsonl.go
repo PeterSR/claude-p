@@ -175,7 +175,20 @@ func decodeJSONLLine(line []byte) (tailEvent, error) {
 			out.Text = textFromContent(m.Content)
 			if ev.Type == "assistant" {
 				_, nonTerminal := nonTerminalStopReasons[m.StopReason]
-				out.Terminal = m.StopReason != "" && !nonTerminal
+				// Terminal requires both a terminal stop_reason AND at
+				// least one user-visible text block. Extended thinking
+				// emits intermediate messages with stop_reason=end_turn
+				// but only a "thinking" block — those are NOT the final
+				// answer; the real text response comes in the next
+				// assistant message.
+				hasText := false
+				for _, b := range m.Content {
+					if b.Type == "text" {
+						hasText = true
+						break
+					}
+				}
+				out.Terminal = m.StopReason != "" && !nonTerminal && hasText
 			}
 		}
 	}

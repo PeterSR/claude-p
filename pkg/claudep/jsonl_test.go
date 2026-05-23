@@ -30,6 +30,35 @@ func TestDecodeJSONLLine_assistantToolUseNotTerminal(t *testing.T) {
 	}
 }
 
+func TestDecodeJSONLLine_thinkingOnlyNotTerminal(t *testing.T) {
+	// Extended thinking sometimes produces an assistant message with
+	// stop_reason=end_turn but only a "thinking" content block — no
+	// text. That is NOT the user-visible final answer; the real text
+	// arrives in the next assistant message.
+	line := []byte(`{"type":"assistant","message":{"id":"x","content":[{"type":"thinking","thinking":""}],"stop_reason":"end_turn"}}`)
+	ev, err := decodeJSONLLine(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev.Terminal {
+		t.Error("thinking-only message should NOT be marked terminal even with stop_reason=end_turn")
+	}
+}
+
+func TestDecodeJSONLLine_thinkingPlusTextIsTerminal(t *testing.T) {
+	line := []byte(`{"type":"assistant","message":{"id":"x","content":[{"type":"thinking","thinking":""},{"type":"text","text":"the answer"}],"stop_reason":"end_turn"}}`)
+	ev, err := decodeJSONLLine(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ev.Terminal {
+		t.Error("end_turn with text content alongside thinking should be terminal")
+	}
+	if ev.Text != "the answer" {
+		t.Errorf("Text = %q, want %q", ev.Text, "the answer")
+	}
+}
+
 func TestDecodeJSONLLine_assistantPauseTurnNotTerminal(t *testing.T) {
 	line := []byte(`{"type":"assistant","message":{"id":"x","content":[],"stop_reason":"pause_turn"}}`)
 	ev, err := decodeJSONLLine(line)

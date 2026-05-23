@@ -17,6 +17,7 @@ func TestClassifyInteractiveFailure(t *testing.T) {
 		{"approaching limit", "Approaching usage limit", FailureRateLimit},
 		{"5-hour limit", "5-hour limit reached", FailureRateLimit},
 		{"trust folder", "Do you trust the files in this folder?", FailureWorkspaceTrustBlocked},
+		{"custom api key modal", "Detected a custom API key in your environment\nANTHROPIC_API_KEY: sk-ant-...\nDo you want to use this API key?", FailureCustomAPIKeyDetected},
 		{"permission allow", "Permission required. Allow this tool? (y/N)", FailureToolApprovalBlocked},
 		{"permission deny", "Permission required. Deny once?", FailureToolApprovalBlocked},
 		// Negative: "permission" alone shouldn't match.
