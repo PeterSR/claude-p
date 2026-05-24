@@ -121,6 +121,13 @@ func init() {
 	}
 
 	f := c.Flags()
+	// -p / --print is `claude`'s switch into headless mode. claude-p is
+	// always headless, so the flag is a no-op here — accepted purely so
+	// existing `claude -p ...` invocations work verbatim when the binary
+	// is swapped to claude-p.
+	var noopPrint bool
+	f.BoolVarP(&noopPrint, "print", "p", false, "no-op; claude-p is always headless")
+	_ = f.MarkHidden("print")
 	f.StringVar(&runOpts.Binary, "binary", "", "path to the claude executable (default: claude on PATH)")
 	f.StringVar(&runOpts.SessionID, "session-id", "", "session id passed to claude --session-id (default: random)")
 	f.StringVar(&runOpts.Cwd, "cwd", "", "working directory for the claude session")
