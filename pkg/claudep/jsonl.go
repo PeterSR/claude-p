@@ -24,6 +24,7 @@ var nonTerminalStopReasons = map[string]struct{}{
 // pieces we don't introspect so we can forward them verbatim.
 type jsonlEvent struct {
 	Type    string          `json:"type"`
+	Subtype string          `json:"subtype,omitempty"`
 	Message json.RawMessage `json:"message,omitempty"`
 }
 
@@ -167,6 +168,15 @@ func decodeJSONLLine(line []byte) (tailEvent, error) {
 		Raw:     line,
 		Type:    ev.Type,
 		Message: ev.Message,
+	}
+	// claude emits one `system.subtype=turn_duration` event at the end
+	// of every turn (after the Stop hook fires, regardless of whether a
+	// final text message was produced). This is our most reliable
+	// "this turn is over" signal — terminal assistant text isn't always
+	// emitted when the model is satisfied with just a tool call.
+	if ev.Type == "system" && ev.Subtype == "turn_duration" {
+		out.Terminal = true
+		return out, nil
 	}
 	if (ev.Type == "assistant" || ev.Type == "user") && len(ev.Message) > 0 {
 		var m parsedMessage

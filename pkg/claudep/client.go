@@ -99,9 +99,11 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 
 	err = tailJSONL(runCtx, jsonlPath, func(ev tailEvent) (bool, error) {
 		em.handle(ev)
-		// Stop once we see a terminal assistant message. This is the
-		// signal claude is done with this turn.
-		if ev.Type == "assistant" && ev.Terminal {
+		// Stop on any terminal event — either a terminal assistant text
+		// message OR the system turn_duration marker (which catches
+		// tool-only turns where the model is satisfied without emitting
+		// a final text response).
+		if ev.Terminal {
 			return true, nil
 		}
 		return false, nil

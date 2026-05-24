@@ -98,6 +98,37 @@ func TestDecodeJSONLLine_userEvent(t *testing.T) {
 	}
 }
 
+func TestDecodeJSONLLine_systemTurnDurationIsTerminal(t *testing.T) {
+	// claude fires `system.subtype=turn_duration` at the very end of
+	// every turn — even when the model finishes with just a tool call
+	// and no final assistant text. Tailing on assistant terminal only
+	// would block indefinitely on such turns.
+	line := []byte(`{"type":"system","subtype":"turn_duration","durationMs":11281,"messageCount":15}`)
+	ev, err := decodeJSONLLine(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ev.Terminal {
+		t.Error("system.subtype=turn_duration should be terminal")
+	}
+	if ev.Type != "system" {
+		t.Errorf("Type = %q, want system", ev.Type)
+	}
+}
+
+func TestDecodeJSONLLine_otherSystemEventsNotTerminal(t *testing.T) {
+	// Other system events (stop_hook_summary, etc.) are NOT the canonical
+	// "turn is over" marker — only turn_duration is.
+	line := []byte(`{"type":"system","subtype":"stop_hook_summary","hookCount":5}`)
+	ev, err := decodeJSONLLine(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev.Terminal {
+		t.Error("system.subtype=stop_hook_summary should not be terminal")
+	}
+}
+
 func TestDecodeJSONLLine_internalEventsIgnored(t *testing.T) {
 	// Non-user/assistant events shouldn't crash and shouldn't carry
 	// terminal/text fields populated.
