@@ -33,14 +33,14 @@ type jsonlEvent struct {
 // envelope. Pointer fields are nil-able so we can preserve "unknown"
 // (emit JSON null) versus "zero" (emit 0) in the output.
 type parsedMessage struct {
-	ID            string          `json:"id,omitempty"`
-	Model         string          `json:"model,omitempty"`
-	Role          string          `json:"role,omitempty"`
-	StopReason    string          `json:"stop_reason,omitempty"`
-	StopSequence  json.RawMessage `json:"stop_sequence,omitempty"`
-	StopDetails   json.RawMessage `json:"stop_details,omitempty"`
-	Content       []contentBlock  `json:"content,omitempty"`
-	Usage         *messageUsage   `json:"usage,omitempty"`
+	ID           string          `json:"id,omitempty"`
+	Model        string          `json:"model,omitempty"`
+	Role         string          `json:"role,omitempty"`
+	StopReason   string          `json:"stop_reason,omitempty"`
+	StopSequence json.RawMessage `json:"stop_sequence,omitempty"`
+	StopDetails  json.RawMessage `json:"stop_details,omitempty"`
+	Content      []contentBlock  `json:"content,omitempty"`
+	Usage        *messageUsage   `json:"usage,omitempty"`
 }
 
 // contentBlock is the union shape across the block types claude emits:

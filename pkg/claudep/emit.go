@@ -588,15 +588,15 @@ func assistantMessageOut(m *parsedMessage) map[string]any {
 		contentOut = append(contentOut, contentBlockOut(b, true))
 	}
 	out := map[string]any{
-		"model":         nonEmpty(m.Model, "claude-tui"),
-		"id":            nonEmpty(m.ID, "msg_tui_"+newEventUUID()),
-		"type":          "message",
-		"role":          nonEmpty(m.Role, "assistant"),
-		"content":       contentOut,
-		"stop_reason":   nilIfEmpty(m.StopReason),
-		"stop_sequence": nil,
-		"stop_details":  nil,
-		"usage":         startUsage(m.Usage),
+		"model":              nonEmpty(m.Model, "claude-tui"),
+		"id":                 nonEmpty(m.ID, "msg_tui_"+newEventUUID()),
+		"type":               "message",
+		"role":               nonEmpty(m.Role, "assistant"),
+		"content":            contentOut,
+		"stop_reason":        nilIfEmpty(m.StopReason),
+		"stop_sequence":      nil,
+		"stop_details":       nil,
+		"usage":              startUsage(m.Usage),
 		"context_management": nil,
 	}
 	if m.Usage != nil {

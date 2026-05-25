@@ -5,11 +5,11 @@ import "strings"
 // Failure categories ClassifyInteractiveFailure can return. Empty
 // string means "nothing recognisable on screen."
 const (
-	FailureAuthBlocked              = "auth_blocked"
-	FailureRateLimit                = "rate_limit"
-	FailureWorkspaceTrustBlocked    = "workspace_trust_blocked"
-	FailureToolApprovalBlocked      = "tool_approval_blocked"
-	FailureCustomAPIKeyDetected     = "custom_api_key_detected"
+	FailureAuthBlocked           = "auth_blocked"
+	FailureRateLimit             = "rate_limit"
+	FailureWorkspaceTrustBlocked = "workspace_trust_blocked"
+	FailureToolApprovalBlocked   = "tool_approval_blocked"
+	FailureCustomAPIKeyDetected  = "custom_api_key_detected"
 )
 
 // ClassifyInteractiveFailure returns a short reason string for common

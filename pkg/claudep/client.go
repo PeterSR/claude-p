@@ -51,18 +51,18 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 	defer cancel()
 
 	launch := claudepty.ClaudeLaunch{
-		Binary:                          opts.Binary,
-		MCPConfig:                       firstNonEmpty(opts.MCPConfig),
-		StrictMCPConfig:                 opts.StrictMCPConfig,
-		AllowedTools:                    joinComma(opts.AllowedTools),
-		AppendSystemPrompt:              opts.AppendSystemPrompt,
-		SystemPrompt:                    opts.SystemPrompt,
-		PermissionMode:                  opts.PermissionMode,
-		SessionID:                       sessionID,
-		Model:                           opts.Model,
-		AddDirs:                         opts.AddDirs,
-		Cwd:                             opts.Cwd,
-		ExtraArgs:                       remainingPassthroughArgs(opts),
+		Binary:             opts.Binary,
+		MCPConfig:          firstNonEmpty(opts.MCPConfig),
+		StrictMCPConfig:    opts.StrictMCPConfig,
+		AllowedTools:       joinComma(opts.AllowedTools),
+		AppendSystemPrompt: opts.AppendSystemPrompt,
+		SystemPrompt:       opts.SystemPrompt,
+		PermissionMode:     opts.PermissionMode,
+		SessionID:          sessionID,
+		Model:              opts.Model,
+		AddDirs:            opts.AddDirs,
+		Cwd:                opts.Cwd,
+		ExtraArgs:          remainingPassthroughArgs(opts),
 	}
 	sess, err := claudepty.LaunchClaude(runCtx, launch)
 	if err != nil {
