@@ -110,12 +110,34 @@ func (e *emitter) handle(ev tailEvent) {
 			e.statusEmitted = true
 		}
 		e.emitAssistantStreamEvents(ev)
+	case "user":
+		// User events carry tool_result blocks (claude's response to its
+		// own tool calls). Real `claude -p --output-format stream-json`
+		// forwards these so consumers can pair each tool_use with its
+		// result. Python claude-p drops them; we forward them because
+		// observability is the main reason to choose stream-json over
+		// json. Filtered to messages that actually contain tool_result
+		// content blocks — chat-input user messages aren't relevant for
+		// the headless flow.
+		if ev.Parsed != nil && hasToolResult(ev.Parsed.Content) {
+			e.writeJSON(map[string]any{
+				"type":               "user",
+				"message":            userMessageOut(ev.Parsed),
+				"parent_tool_use_id": nil,
+				"session_id":         e.sessionID,
+				"uuid":               newEventUUID(),
+			})
+		}
 	}
-	// User events are intentionally NOT forwarded — matches Python
-	// claude-p's stream-json (which only surfaces assistant turns via
-	// the synthesized stream_event chunks). Forwarding them adds noise
-	// and breaks shape parity for consumers that hard-code the Python
-	// event vocabulary.
+}
+
+func hasToolResult(blocks []contentBlock) bool {
+	for _, b := range blocks {
+		if b.Type == "tool_result" {
+			return true
+		}
+	}
+	return false
 }
 
 // emitAssistantStreamEvents synthesizes the SDK-shaped chunk sequence
@@ -155,12 +177,7 @@ func (e *emitter) emitAssistantStreamEvents(ev tailEvent) {
 	// content_block_start for each block (we always have at least one;
 	// claude may emit tool_use or text blocks).
 	for i, b := range m.Content {
-		cb := map[string]any{
-			"type": b.Type,
-		}
-		if b.Type == "text" {
-			cb["text"] = ""
-		}
+		cb := contentBlockOut(b, false)
 		e.emitStreamEvent(map[string]any{
 			"type":          "content_block_start",
 			"index":         i,
@@ -514,21 +531,61 @@ func deltaUsage(u *messageUsage) map[string]any {
 	}
 }
 
+// contentBlockOut renders a parsed content block back into the shape
+// stream-json consumers (and `claude -p`) expect. fullText=true emits
+// the actual text body for text blocks; false emits an empty string
+// (the convention for content_block_start events, which are followed
+// by a content_block_delta carrying the text).
+func contentBlockOut(b contentBlock, fullText bool) map[string]any {
+	out := map[string]any{"type": b.Type}
+	switch b.Type {
+	case "text":
+		if fullText {
+			out["text"] = b.Text
+		} else {
+			out["text"] = ""
+		}
+	case "tool_use":
+		if b.ID != "" {
+			out["id"] = b.ID
+		}
+		if b.Name != "" {
+			out["name"] = b.Name
+		}
+		// Input is a JSON object claude wrote; forward it verbatim if
+		// present, else fall back to {} so consumers can rely on the
+		// key existing.
+		if len(b.Input) > 0 {
+			out["input"] = json.RawMessage(b.Input)
+		} else {
+			out["input"] = map[string]any{}
+		}
+	case "tool_result":
+		if b.ToolUseID != "" {
+			out["tool_use_id"] = b.ToolUseID
+		}
+		if len(b.Content) > 0 {
+			out["content"] = json.RawMessage(b.Content)
+		}
+		if b.IsError {
+			out["is_error"] = true
+		}
+	}
+	return out
+}
+
 // assistantMessageOut produces the curated assistant.message payload
-// for stream-json's "assistant" event. Python emits a subset of the
-// raw JSONL assistant message: model, id, type, role, content,
-// stop_reason, stop_sequence, stop_details, usage, context_management.
+// for stream-json's "assistant" event. Mirrors `claude -p`'s shape:
+// model, id, type, role, content (with full per-block detail for
+// tool_use), stop_reason, stop_sequence, stop_details, usage,
+// context_management.
 func assistantMessageOut(m *parsedMessage) map[string]any {
 	if m == nil {
 		return map[string]any{}
 	}
 	contentOut := make([]any, 0, len(m.Content))
 	for _, b := range m.Content {
-		blk := map[string]any{"type": b.Type}
-		if b.Type == "text" {
-			blk["text"] = b.Text
-		}
-		contentOut = append(contentOut, blk)
+		contentOut = append(contentOut, contentBlockOut(b, true))
 	}
 	out := map[string]any{
 		"model":         nonEmpty(m.Model, "claude-tui"),
@@ -554,6 +611,24 @@ func assistantMessageOut(m *parsedMessage) map[string]any {
 		}
 	}
 	return out
+}
+
+// userMessageOut produces the user.message payload for stream-json's
+// "user" event. The shape mirrors `claude -p`: role + content blocks
+// (with tool_result fully detailed so consumers can pair results with
+// their originating tool_use by tool_use_id).
+func userMessageOut(m *parsedMessage) map[string]any {
+	if m == nil {
+		return map[string]any{}
+	}
+	contentOut := make([]any, 0, len(m.Content))
+	for _, b := range m.Content {
+		contentOut = append(contentOut, contentBlockOut(b, true))
+	}
+	return map[string]any{
+		"role":    nonEmpty(m.Role, "user"),
+		"content": contentOut,
+	}
 }
 
 func cacheCreationToMap(c *cacheCreation) map[string]any {

@@ -43,10 +43,29 @@ type parsedMessage struct {
 	Usage         *messageUsage   `json:"usage,omitempty"`
 }
 
+// contentBlock is the union shape across the block types claude emits:
+//   - text: Type + Text
+//   - thinking: Type only (Text is set to the thinking string but we
+//     filter that out in textFromContent so it doesn't leak into final
+//     answers)
+//   - tool_use: Type + ID + Name + Input
+//   - tool_result: Type + ToolUseID + Content + IsError
+//
+// Input and Content are kept as json.RawMessage so we can forward them
+// verbatim without committing to a schema for tool-specific payloads.
 type contentBlock struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text,omitempty"`
-	Extra json.RawMessage `json:"-"`
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+
+	// tool_use fields.
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
+
+	// tool_result fields.
+	ToolUseID string          `json:"tool_use_id,omitempty"`
+	Content   json.RawMessage `json:"content,omitempty"`
+	IsError   bool            `json:"is_error,omitempty"`
 }
 
 // messageUsage matches the per-message usage block claude writes inside
