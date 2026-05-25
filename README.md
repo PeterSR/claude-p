@@ -15,9 +15,7 @@ subscription login, but `claude -p` / programmatic agent workflows are
 limited, capped, or otherwise differently-billed in the environment
 you're running in.
 
-> **Independent of [Equality-Machine/claude-p](https://github.com/Equality-Machine/claude-p)**
-> (Python). Same idea, different language and codebase. Patterns
-> borrowed where they made sense; bugs are mine.
+> **Inspired by [Equality-Machine/claude-p](https://github.com/Equality-Machine/claude-p)** (Python). 
 
 ## Why claude-p
 
