@@ -5,10 +5,25 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/PeterSR/claude-p/pkg/claudepty"
 )
+
+// compactScreen drops blank lines and trailing spaces from a rendered screen so
+// it can be shown in a diagnostic without the 200x60 padding.
+func compactScreen(s string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		b.WriteString(strings.TrimRight(line, " "))
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
 
 // Result summarises one Query invocation. The output has already been
 // written to Options.Stdout in the chosen format; Result exists for
@@ -86,9 +101,19 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 	// A continued (reused) daemon session is already past the trust modal and
 	// sitting at the input prompt — only fresh launches need to wait.
 	if !reused {
-		if err := claudepty.WaitForReady(runCtx, sess, 20*time.Second); err != nil {
+		// 45s, not 20s: first boot can be slow (loading MCP servers, plugins,
+		// large project context) before the prompt appears. Bounded by the
+		// overall Query timeout.
+		if err := claudepty.WaitForReady(runCtx, sess, 45*time.Second); err != nil {
 			scr, _ := sess.CaptureScreen(0, 500*time.Millisecond)
-			if failure := claudepty.ClassifyInteractiveFailure(scr.Text()); failure != "" {
+			screen := scr.Text()
+			// Surface what claude was actually showing so a "never reached the
+			// prompt" failure is diagnosable (login screen, an unrecognised
+			// modal, slow boot, a nested-session oddity, ...) instead of opaque.
+			if compact := compactScreen(screen); compact != "" {
+				fmt.Fprintf(opts.Stderr, "claudep: claude never reached the input prompt within 45s; last rendered screen:\n%s\n", compact)
+			}
+			if failure := claudepty.ClassifyInteractiveFailure(screen); failure != "" {
 				return nil, fmt.Errorf("claudep: %s (%w)", failure, err)
 			}
 			return nil, fmt.Errorf("claudep: claude never reached input prompt: %w", err)

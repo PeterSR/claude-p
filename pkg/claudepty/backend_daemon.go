@@ -2,6 +2,7 @@ package claudepty
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,10 +44,39 @@ func OpenDaemon(sock string, l ClaudeLaunch, sessionID string) (sess PTYSession,
 	if env == nil {
 		env = SubscriptionEnv()
 	}
-	created, err := c.EnsureSession(sessionID, bin, BuildClaudeArgs(l), l.Cwd, envSliceToMap(env), VTCols, VTRows)
+	// Continue an already-alive session with this id, else create one. We don't
+	// use the client's EnsureSession helper because it discards the id the
+	// daemon assigns: we must verify the daemon actually honored our requested
+	// id (see below), so we drive new_session directly.
+	infos, err := c.ListSessions()
 	if err != nil {
 		_ = c.Close()
 		return nil, false, err
+	}
+	for _, info := range infos {
+		if info.ID == sessionID && info.Alive {
+			reused = true
+			break
+		}
+	}
+	if !reused {
+		got, nerr := c.NewSession(bin, BuildClaudeArgs(l), l.Cwd, envSliceToMap(env), VTCols, VTRows,
+			client.WithSessionID(sessionID), client.WithGetOrCreate())
+		if nerr != nil {
+			_ = c.Close()
+			return nil, false, nerr
+		}
+		// A daemon that predates bring-your-own-id (pupptyeer < 0.6.0) silently
+		// ignores requested_id and assigns its own UUID. We key everything
+		// (attach/capture, the JSONL transcript, and continuation across runs)
+		// on claude's --session-id, so a mismatched pty-session id would make
+		// the very next Attach fail with "session not found". Fail clearly and
+		// reap the orphan it spawned rather than limping on.
+		if got != sessionID {
+			_ = c.Kill(got)
+			_ = c.Close()
+			return nil, false, fmt.Errorf("pupptyeer daemon did not honor the requested session id (created %q, wanted %q): --pupptyeer-daemon needs pupptyeer >= 0.6.0; upgrade it, or stop a stale older `pupptyeer daemon` that is still holding the socket", got, sessionID)
+		}
 	}
 	// Attach so the daemon delivers this session's exit event to us, then drain
 	// events forever (an attached-but-undrained connection eventually stalls
@@ -57,7 +87,7 @@ func OpenDaemon(sock string, l ClaudeLaunch, sessionID string) (sess PTYSession,
 	}
 	d := &daemonSession{c: c, session: sessionID, exitCh: make(chan int, 1)}
 	go d.drain()
-	return d, !created, nil
+	return d, reused, nil
 }
 
 func (d *daemonSession) drain() {
