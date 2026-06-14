@@ -43,6 +43,22 @@ func JSONLPath(sessionID string) string {
 	return best
 }
 
+// JSONLOffset returns the current size in bytes of the session's persisted
+// transcript, or 0 if it does not exist yet. Capture it BEFORE sending a new
+// prompt so a tail can skip everything already written (prior turns of a
+// continued conversation) and only see the new turn.
+func JSONLOffset(sessionID string) int64 {
+	p := JSONLPath(sessionID)
+	if p == "" {
+		return 0
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		return 0
+	}
+	return fi.Size()
+}
+
 // WaitForJSONL polls JSONLPath until the file appears or the deadline
 // passes. Useful right after a `claude --session-id <id>` invocation
 // when you want to start streaming events as soon as the file exists.

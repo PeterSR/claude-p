@@ -134,6 +134,12 @@ func init() {
 	f.StringVar(&runOutputFormat, "output-format", "text", "output format: text|json|stream-json")
 	f.IntVar(&runTimeoutSec, "timeout", 300, "overall timeout in seconds")
 
+	// pupptyeer daemon backend (persistent, multi-turn). Default is an
+	// in-process pty (one-shot, no external binary).
+	f.BoolVar(&runOpts.PupptyeerDaemon, "pupptyeer-daemon", false, "drive claude through a running pupptyeer daemon (persistent; same --session-id continues the conversation) instead of an in-process pty")
+	f.StringVar(&runOpts.PupptyeerSocket, "pupptyeer-socket", "", "pupptyeer daemon socket path (default: $PUPPTYEER_SOCK or the standard per-user location)")
+	f.StringVar(&runOpts.PupptyeerBin, "pupptyeer-bin", "", "pupptyeer binary used to auto-start a daemon if none is running (default: $PUPPTYEER_BIN or pupptyeer on PATH)")
+
 	// Passthrough flags — alphabetical to match flags.go.
 	f.StringSliceVar(&runOpts.AddDirs, "add-dir", nil, "passed to claude --add-dir (repeatable)")
 	f.StringVar(&runOpts.Agent, "agent", "", "passed to claude --agent")

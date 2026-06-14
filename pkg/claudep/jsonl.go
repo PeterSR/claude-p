@@ -110,7 +110,7 @@ type tailEvent struct {
 //
 // Polling cadence is 100ms — fine for interactive sessions where new
 // content arrives at human-conversation rates, not microseconds.
-func tailJSONL(ctx context.Context, path string, cb func(tailEvent) (done bool, err error)) error {
+func tailJSONL(ctx context.Context, path string, startOffset int64, cb func(tailEvent) (done bool, err error)) error {
 	// Wait for the file to appear in the first place.
 	deadline := time.Now().Add(15 * time.Second)
 	var f *os.File
@@ -133,6 +133,18 @@ func tailJSONL(ctx context.Context, path string, cb func(tailEvent) (done bool, 
 		return errors.New("jsonl: file never appeared")
 	}
 	defer f.Close()
+
+	// Skip everything already written (prior turns of a continued conversation)
+	// so only the new turn is decoded. Byte offsets are line-aligned because
+	// claude appends whole JSONL lines. If the file is now shorter than the
+	// recorded offset (rotation/truncation), start from the beginning.
+	if startOffset > 0 {
+		if fi, statErr := f.Stat(); statErr == nil && fi.Size() >= startOffset {
+			if _, seekErr := f.Seek(startOffset, io.SeekStart); seekErr != nil {
+				return seekErr
+			}
+		}
+	}
 
 	r := bufio.NewReader(f)
 	var partial []byte
