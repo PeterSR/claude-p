@@ -3,7 +3,6 @@ package claudepty
 import (
 	"strconv"
 	"strings"
-	"time"
 )
 
 // UnescapeKeys turns Go-style escape sequences in s into their
@@ -36,21 +35,4 @@ func escapeForUnquote(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
-}
-
-// SettleSnapshot waits up to budget for the pty buffer to be quiet for
-// at least settle (no new bytes in that window), then returns the
-// rendered screen + whether quiet was actually observed (false = the
-// budget elapsed without a quiet window).
-func (cs *ClaudeSession) SettleSnapshot(settle, budget time.Duration) (screen string, quiet bool) {
-	deadline := time.Now().Add(budget)
-	for time.Now().Before(deadline) {
-		_, since := cs.Snapshot()
-		if since >= settle {
-			quiet = true
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	return cs.RenderGrid(), quiet
 }

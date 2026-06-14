@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/PeterSR/claude-p/pkg/claudepty"
@@ -50,6 +49,17 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 	runCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
 
+	// Resolve the working directory to an absolute path up front. The daemon
+	// backend spawns claude in a separate process whose default cwd is the
+	// daemon's, not ours — so we must pass an explicit cwd or the session lands
+	// in the wrong project (wrong transcript location, wrong --resume scope).
+	cwd := opts.Cwd
+	if cwd == "" {
+		if wd, werr := os.Getwd(); werr == nil {
+			cwd = wd
+		}
+	}
+
 	launch := claudepty.ClaudeLaunch{
 		Binary:             opts.Binary,
 		MCPConfig:          firstNonEmpty(opts.MCPConfig),
@@ -61,33 +71,39 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 		SessionID:          sessionID,
 		Model:              opts.Model,
 		AddDirs:            opts.AddDirs,
-		Cwd:                opts.Cwd,
+		Cwd:                cwd,
 		ExtraArgs:          remainingPassthroughArgs(opts),
 	}
-	sess, err := claudepty.LaunchClaude(runCtx, launch)
+
+	sess, reused, err := newBackend(opts, sessionID, launch)
 	if err != nil {
 		return nil, fmt.Errorf("claudep: %w", err)
 	}
+	// One-shot owns the session and tears it down; daemon mode detaches and
+	// leaves the live claude alive for the next invocation to continue.
 	defer sess.Close()
 
-	if err := sess.WaitForReady(runCtx, 20*time.Second); err != nil {
-		failure := claudepty.ClassifyInteractiveFailure(sess.RenderGrid())
-		if failure != "" {
-			return nil, fmt.Errorf("claudep: %s (%w)", failure, err)
+	// A continued (reused) daemon session is already past the trust modal and
+	// sitting at the input prompt — only fresh launches need to wait.
+	if !reused {
+		if err := claudepty.WaitForReady(runCtx, sess, 20*time.Second); err != nil {
+			scr, _ := sess.CaptureScreen(0, 500*time.Millisecond)
+			if failure := claudepty.ClassifyInteractiveFailure(scr.Text()); failure != "" {
+				return nil, fmt.Errorf("claudep: %s (%w)", failure, err)
+			}
+			return nil, fmt.Errorf("claudep: claude never reached input prompt: %w", err)
 		}
-		return nil, fmt.Errorf("claudep: claude never reached input prompt: %w", err)
 	}
 
-	if err := sess.SendPrompt(opts.Prompt); err != nil {
+	// Record where the transcript currently ends BEFORE sending the prompt, so
+	// the tail only sees the new turn (a continued conversation already has all
+	// prior turns on disk).
+	startOffset := claudepty.JSONLOffset(sessionID)
+
+	if err := claudepty.SendPrompt(sess, opts.Prompt); err != nil {
 		return nil, fmt.Errorf("claudep: send prompt: %w", err)
 	}
 
-	cwd := opts.Cwd
-	if cwd == "" {
-		if wd, werr := os.Getwd(); werr == nil {
-			cwd = wd
-		}
-	}
 	em := newEmitter(opts.Stdout, opts.OutputFormat, sessionID, cwd)
 	em.init()
 
@@ -97,13 +113,23 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 	}
 	em.setJSONLPath(jsonlPath)
 
-	err = tailJSONL(runCtx, jsonlPath, func(ev tailEvent) (bool, error) {
+	// Each turn opens with claude logging our submitted prompt as a `user`
+	// event, then the assistant reply, then a trailing `system turn_duration`.
+	// When continuing a live session the PRIOR turn's turn_duration can still be
+	// flushing to disk just past startOffset; without this gate the tail would
+	// mistake that stale marker for the new turn's completion and emit nothing.
+	// Only accept a terminal event once we've seen this turn's user echo.
+	sawUserTurn := false
+	err = tailJSONL(runCtx, jsonlPath, startOffset, func(ev tailEvent) (bool, error) {
 		em.handle(ev)
+		if ev.Type == "user" {
+			sawUserTurn = true
+		}
 		// Stop on any terminal event — either a terminal assistant text
 		// message OR the system turn_duration marker (which catches
 		// tool-only turns where the model is satisfied without emitting
-		// a final text response).
-		if ev.Terminal {
+		// a final text response) — but only after this turn's user echo.
+		if ev.Terminal && sawUserTurn {
 			return true, nil
 		}
 		return false, nil
@@ -114,17 +140,17 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("claudep: %w", err)
 	}
 
-	// Cleanly exit the interactive session before the final envelope —
-	// gives us a real exit code to report.
-	sess.Exit()
-	if waitErr := sess.WaitErr(); waitErr != nil {
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			code := exitErr.ExitCode()
+	if opts.PupptyeerDaemon {
+		// Leave the live session running for continuation; detach only. A
+		// still-alive session has no meaningful exit code, so leave it nil
+		// (the envelope tolerates that).
+		_ = sess.Close()
+	} else {
+		// One-shot: cleanly exit claude so we can report a real exit code.
+		claudepty.Shutdown(sess)
+		if exited, code := sess.Exited(); exited {
 			em.setExitCode(&code)
 		}
-	} else {
-		zero := 0
-		em.setExitCode(&zero)
 	}
 
 	em.finish()

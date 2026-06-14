@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # npm OIDC trusted publishing
 
 jobs:
   goreleaser:
@@ -27,3 +28,36 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publish @petersr/claude-p (+ the 6 platform packages) to npm. Gated behind
+  # the PUBLISH_NPM repo variable so the workflow is safe to land before the
+  # packages exist on npm (their first publish is manual — see PUBLISHING.md).
+  publish-npm:
+    if: vars.PUBLISH_NPM == '1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      # npm >= 11.5 is required for OIDC trusted publishing.
+      - run: npm install -g npm@latest
+
+      - name: Build per-platform packages
+        run: node npm/build.mjs "${GITHUB_REF_NAME#v}"
+
+      - name: Publish platform packages, then the meta package
+        run: |
+          set -e
+          for d in npm/claude-p-*/; do
+            ( cd "$d" && npm publish --access public --provenance )
+          done
+          ( cd npm/claude-p && npm publish --access public --provenance )

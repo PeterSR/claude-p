@@ -36,13 +36,24 @@ TUI through a `claude -p`-compatible CLI and Go library:
 Under the hood, `claude-p` starts interactive `claude` in a pty, types
 the prompt, watches Claude Code's own persisted JSONL transcript for
 the canonical assistant text, and emits the answer in your chosen
-format.
+format. The pty substrate comes from
+[pupptyeer](https://github.com/PeterSR/pupptyeer): one-shot runs drive an
+in-process pty (no extra binary), and `--pupptyeer-daemon` drives a
+long-lived daemon so repeated calls continue the same conversation
+without paying the TUI-startup cost each time (see
+[Daemon mode](#daemon-mode-persistent-multi-turn)).
 
 It also ships an **MCP bridge framework** so the same primitives that
 power the CLI can be embedded in your own Go program — for example, an
 orchestrator that drives an inner interactive `claude` via MCP tools.
 
 ## Install
+
+### npm (prebuilt, resolves your OS/arch automatically)
+
+```sh
+npm i -g @petersr/claude-p
+```
 
 ### Pre-built binaries
 
@@ -98,6 +109,44 @@ Note: `total_cost_usd`, `num_turns`, and `usage` are emitted as `null`
 because the interactive Claude Code TUI does not expose per-turn token
 counts. The shape matches `claude -p` for tools that consume it; the
 absence of accurate cost data is a property of the interactive backend.
+
+### Daemon mode (persistent, multi-turn)
+
+By default each `claude-p` call spawns a fresh in-process `claude`, runs
+one prompt, and exits — no daemon, no extra binary. That pays the
+TUI-startup cost every time and keeps no conversation state between
+calls.
+
+With `--pupptyeer-daemon`, claude-p instead drives `claude` inside a
+[pupptyeer](https://github.com/PeterSR/pupptyeer) daemon. The `claude`
+TUI stays alive between invocations, so a later call with the **same
+`--session-id`** continues the same conversation — skipping startup
+*and* keeping context:
+
+```sh
+# Boots a persistent claude keyed by this session id (in this cwd):
+claude-p --pupptyeer-daemon --session-id 5b1d… "remember the number 7"
+
+# Same id, same cwd → reattaches to the live session and continues:
+claude-p --pupptyeer-daemon --session-id 5b1d… "what number did I ask you to remember?"
+```
+
+The session id you pass *is* the pupptyeer session id; the working
+directory ties in because claude resumes a session in the directory it
+was created in. If no live session holds the id but a transcript exists,
+claude-p boots a fresh `claude --resume <id>` to reload the conversation.
+
+Requirements for daemon mode: the `pupptyeer` binary at `$PUPPTYEER_BIN`
+or on `PATH` (claude-p will auto-start a daemon if one isn't running) and
+a reachable daemon socket. Override the socket with `--pupptyeer-socket`
+and the binary with `--pupptyeer-bin`.
+
+To get both binaries via npm (the batteries-included setup — claude-p
+auto-starts the daemon once `pupptyeer` is on `PATH`):
+
+```sh
+npm i -g @petersr/claude-p @petersr/pupptyeer
+```
 
 ## Library usage
 

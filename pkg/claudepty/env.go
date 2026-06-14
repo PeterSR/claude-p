@@ -15,6 +15,22 @@ var providerEnvKeys = []string{
 	"ANTHROPIC_BASE_URL",
 }
 
+// nestingEnvKeys + nestingEnvPrefixes are the markers Claude Code sets in a
+// session's environment to flag a nested/child invocation and tie it to the
+// parent session. If claude-p is itself launched from inside a Claude Code
+// session (e.g. the MCP-bridge "outer claude drives an inner claude" use case),
+// the spawned claude would inherit these, run as a child of the parent session,
+// and NOT persist its own transcript — which is exactly the transcript claude-p
+// reads the answer from. Strip them so the spawned claude is a clean top-level
+// session.
+var nestingEnvKeys = []string{
+	"CLAUDECODE",
+}
+
+var nestingEnvPrefixes = []string{
+	"CLAUDE_CODE_",
+}
+
 // SubscriptionEnv returns os.Environ() with provider-API keys removed
 // and a TUI-friendly TERM + NO_COLOR added. Use this when spawning
 // claude under your own control; the bare os.Environ() can leak an
@@ -27,8 +43,11 @@ func SubscriptionEnv() []string {
 // SubscriptionEnvFrom is the testable form of SubscriptionEnv: takes
 // the source env explicitly. Empty source is allowed.
 func SubscriptionEnvFrom(src []string) []string {
-	strip := make(map[string]struct{}, len(providerEnvKeys))
+	strip := make(map[string]struct{}, len(providerEnvKeys)+len(nestingEnvKeys))
 	for _, k := range providerEnvKeys {
+		strip[k] = struct{}{}
+	}
+	for _, k := range nestingEnvKeys {
 		strip[k] = struct{}{}
 	}
 	out := make([]string, 0, len(src)+2)
@@ -42,6 +61,9 @@ func SubscriptionEnvFrom(src []string) []string {
 		}
 		k := kv[:eq]
 		if _, drop := strip[k]; drop {
+			continue
+		}
+		if hasAnyPrefix(k, nestingEnvPrefixes) {
 			continue
 		}
 		switch k {
@@ -59,4 +81,13 @@ func SubscriptionEnvFrom(src []string) []string {
 		out = append(out, "NO_COLOR=1")
 	}
 	return out
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
 }

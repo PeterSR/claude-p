@@ -1,0 +1,45 @@
+{
+  "name": "@petersr/claude-p",
+  "version": "0.1.0",
+  "description": "A claude -p drop-in backed by your interactive Claude Code subscription. Installs a prebuilt binary for your platform.",
+  "bin": {
+    "claude-p": "bin/claude-p.cjs"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "claude-p",
+    "cli",
+    "agent",
+    "anthropic"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PeterSR/claude-p.git",
+    "directory": "npm/claude-p"
+  },
+  "homepage": "https://github.com/PeterSR/claude-p#readme",
+  "bugs": "https://github.com/PeterSR/claude-p/issues",
+  "author": "PeterSR",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@petersr/claude-p-linux-x64": "0.1.0",
+    "@petersr/claude-p-linux-arm64": "0.1.0",
+    "@petersr/claude-p-darwin-x64": "0.1.0",
+    "@petersr/claude-p-darwin-arm64": "0.1.0",
+    "@petersr/claude-p-win32-x64": "0.1.0",
+    "@petersr/claude-p-win32-arm64": "0.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

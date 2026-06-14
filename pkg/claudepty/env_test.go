@@ -28,6 +28,29 @@ func TestSubscriptionEnvFrom_stripsProviderKeys(t *testing.T) {
 	}
 }
 
+func TestSubscriptionEnvFrom_stripsNestingMarkers(t *testing.T) {
+	// When claude-p runs from inside a Claude Code session, the spawned claude
+	// must not inherit the parent's nesting markers, or it runs as a child and
+	// never persists its own transcript.
+	src := []string{
+		"PATH=/usr/bin",
+		"CLAUDECODE=1",
+		"CLAUDE_CODE_SESSION_ID=980d98b8-de22-42b6-b17f-5d50cfe5e64d",
+		"CLAUDE_CODE_CHILD_SESSION=1",
+		"CLAUDE_CODE_ENTRYPOINT=cli",
+		"USER=alice",
+	}
+	joined := strings.Join(SubscriptionEnvFrom(src), "\n")
+	for _, banned := range []string{"CLAUDECODE=", "CLAUDE_CODE_SESSION_ID=", "CLAUDE_CODE_CHILD_SESSION=", "CLAUDE_CODE_ENTRYPOINT="} {
+		if strings.Contains(joined, banned) {
+			t.Errorf("expected %s to be stripped, got: %s", banned, joined)
+		}
+	}
+	if !strings.Contains(joined, "PATH=/usr/bin") || !strings.Contains(joined, "USER=alice") {
+		t.Error("non-nesting vars should be preserved")
+	}
+}
+
 func TestSubscriptionEnvFrom_addsTermAndNoColor(t *testing.T) {
 	out := SubscriptionEnvFrom([]string{"PATH=/usr/bin"})
 	joined := strings.Join(out, "\n")
