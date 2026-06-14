@@ -136,9 +136,11 @@ directory ties in because claude resumes a session in the directory it
 was created in. If no live session holds the id but a transcript exists,
 claude-p boots a fresh `claude --resume <id>` to reload the conversation.
 
-Requirements for daemon mode: the `pupptyeer` binary at `$PUPPTYEER_BIN`
-or on `PATH` (claude-p will auto-start a daemon if one isn't running) and
-a reachable daemon socket. Override the socket with `--pupptyeer-socket`
+Requirements for daemon mode: **pupptyeer >= 0.6.0** (earlier daemons lack
+the caller-supplied session ids continuation relies on; claude-p detects an
+older daemon and tells you to upgrade) at `$PUPPTYEER_BIN` or on `PATH`
+(claude-p will auto-start a daemon if one isn't running) and a reachable
+daemon socket. Override the socket with `--pupptyeer-socket`
 and the binary with `--pupptyeer-bin`.
 
 To get both binaries via npm (the batteries-included setup — claude-p
