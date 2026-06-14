@@ -1,6 +1,6 @@
 {
   "name": "@petersr/claude-p",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A claude -p drop-in backed by your interactive Claude Code subscription. Installs a prebuilt binary for your platform.",
   "bin": {
     "claude-p": "bin/claude-p.cjs"
@@ -32,12 +32,12 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@petersr/claude-p-linux-x64": "0.1.0",
-    "@petersr/claude-p-linux-arm64": "0.1.0",
-    "@petersr/claude-p-darwin-x64": "0.1.0",
-    "@petersr/claude-p-darwin-arm64": "0.1.0",
-    "@petersr/claude-p-win32-x64": "0.1.0",
-    "@petersr/claude-p-win32-arm64": "0.1.0"
+    "@petersr/claude-p-linux-x64": "0.1.1",
+    "@petersr/claude-p-linux-arm64": "0.1.1",
+    "@petersr/claude-p-darwin-x64": "0.1.1",
+    "@petersr/claude-p-darwin-arm64": "0.1.1",
+    "@petersr/claude-p-win32-x64": "0.1.1",
+    "@petersr/claude-p-win32-arm64": "0.1.1"
   },
   "publishConfig": {
     "access": "public"
