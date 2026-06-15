@@ -50,6 +50,17 @@ var (
 )
 
 func runE(cmd *cobra.Command, args []string) error {
+	// Idle-start boots a warm daemon session and detaches without a prompt, so
+	// it skips prompt resolution entirely. Handle it before everything else.
+	if runOpts.PupptyeerStartIdle {
+		res, err := claudep.StartIdle(context.Background(), runOpts)
+		if err != nil {
+			return err
+		}
+		fmt.Println(res.SessionID)
+		return nil
+	}
+
 	prompt, err := resolvePrompt(args)
 	if err != nil {
 		return err
@@ -139,6 +150,7 @@ func init() {
 	f.BoolVar(&runOpts.PupptyeerDaemon, "pupptyeer-daemon", false, "drive claude through a running pupptyeer daemon (persistent; same --session-id continues the conversation) instead of an in-process pty")
 	f.StringVar(&runOpts.PupptyeerSocket, "pupptyeer-socket", "", "pupptyeer daemon socket path (default: $PUPPTYEER_SOCK or the standard per-user location)")
 	f.StringVar(&runOpts.PupptyeerBin, "pupptyeer-bin", "", "pupptyeer binary used to auto-start a daemon if none is running (default: $PUPPTYEER_BIN or pupptyeer on PATH)")
+	f.BoolVar(&runOpts.PupptyeerStartIdle, "pupptyeer-start-idle", false, "boot a daemon session, wait until claude is at the prompt, print the session id, and detach without sending a prompt (implies --pupptyeer-daemon; continue later with run --session-id <id>)")
 
 	// Passthrough flags — alphabetical to match flags.go.
 	f.StringSliceVar(&runOpts.AddDirs, "add-dir", nil, "passed to claude --add-dir (repeatable)")

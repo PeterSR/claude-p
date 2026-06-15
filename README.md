@@ -136,6 +136,20 @@ directory ties in because claude resumes a session in the directory it
 was created in. If no live session holds the id but a transcript exists,
 claude-p boots a fresh `claude --resume <id>` to reload the conversation.
 
+To pre-warm a session without sending anything yet, use
+`--pupptyeer-start-idle`. It boots a daemon session, waits until claude is
+sitting at the input prompt, prints the session id, and detaches — leaving
+the TUI idle and ready. It implies `--pupptyeer-daemon`, so the session
+outlives the call. A later `--session-id` run reattaches and continues:
+
+```sh
+# Boot a warm, idle session and capture its id:
+sid=$(claude-p --pupptyeer-start-idle)
+
+# Later — reattach to the already-ready session and send the first prompt:
+claude-p --pupptyeer-daemon --session-id "$sid" "now do the thing"
+```
+
 Requirements for daemon mode: **pupptyeer >= 0.6.0** (earlier daemons lack
 the caller-supplied session ids continuation relies on; claude-p detects an
 older daemon and tells you to upgrade) at `$PUPPTYEER_BIN` or on `PATH`

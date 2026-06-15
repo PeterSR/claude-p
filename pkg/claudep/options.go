@@ -85,6 +85,13 @@ type Options struct {
 	// is reachable. Empty = $PUPPTYEER_BIN, then "pupptyeer" on PATH.
 	PupptyeerBin string
 
+	// PupptyeerStartIdle boots a daemon session, waits until claude is sitting
+	// at the input prompt, then detaches without sending a prompt — leaving the
+	// TUI warm for a later Query with the same SessionID to continue. Implies
+	// PupptyeerDaemon (an in-process pty can't outlive the call, so idle-start
+	// is meaningless without the daemon). When set, Prompt is not required.
+	PupptyeerStartIdle bool
+
 	// Passthrough claude flags (in alphabetical order).
 
 	AddDirs                            []string

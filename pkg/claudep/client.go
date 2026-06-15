@@ -36,45 +36,47 @@ type Result struct {
 	TerminalSeen bool
 }
 
-// Query runs one user prompt against an interactive claude session and
-// emits the result in the chosen format to Options.Stdout. Blocks until
-// claude produces a terminal assistant message, the timeout fires, or
-// ctx is cancelled.
-func Query(ctx context.Context, opts Options) (*Result, error) {
-	if opts.Prompt == "" {
-		return nil, fmt.Errorf("claudep: Prompt is required")
-	}
+// applyDefaults fills in the option fields shared by every entry point.
+func applyDefaults(opts *Options) {
 	if opts.Stdout == nil {
 		opts.Stdout = os.Stdout
 	}
 	if opts.Stderr == nil {
 		opts.Stderr = os.Stderr
 	}
-	if opts.OutputFormat == "" {
-		opts.OutputFormat = FormatText
-	}
 	if opts.Timeout == 0 {
 		opts.Timeout = 5 * time.Minute
 	}
-	sessionID := opts.SessionID
-	if sessionID == "" {
-		sessionID = claudepty.NewSessionID()
+}
+
+// resolveSessionID returns the caller's session id or a fresh random one.
+func resolveSessionID(opts Options) string {
+	if opts.SessionID != "" {
+		return opts.SessionID
 	}
+	return claudepty.NewSessionID()
+}
 
-	runCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
-	defer cancel()
-
-	// Resolve the working directory to an absolute path up front. The daemon
-	// backend spawns claude in a separate process whose default cwd is the
-	// daemon's, not ours — so we must pass an explicit cwd or the session lands
-	// in the wrong project (wrong transcript location, wrong --resume scope).
-	cwd := opts.Cwd
-	if cwd == "" {
-		if wd, werr := os.Getwd(); werr == nil {
-			cwd = wd
-		}
+// resolveCwd resolves the working directory to an absolute path up front. The
+// daemon backend spawns claude in a separate process whose default cwd is the
+// daemon's, not ours — so we must pass an explicit cwd or the session lands in
+// the wrong project (wrong transcript location, wrong --resume scope).
+func resolveCwd(opts Options) string {
+	if opts.Cwd != "" {
+		return opts.Cwd
 	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return opts.Cwd
+}
 
+// prepareSession launches (or reattaches) the pty backend and waits until
+// claude is sitting at the input prompt. On success it returns a live session
+// the caller owns (Close it); on failure it closes the session itself. reused
+// reports a continued daemon session that's already past the trust modal and at
+// the prompt, so it skips the wait.
+func prepareSession(ctx context.Context, opts Options, sessionID, cwd string) (claudepty.PTYSession, bool, error) {
 	launch := claudepty.ClaudeLaunch{
 		Binary:             opts.Binary,
 		MCPConfig:          firstNonEmpty(opts.MCPConfig),
@@ -92,19 +94,15 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 
 	sess, reused, err := newBackend(opts, sessionID, launch)
 	if err != nil {
-		return nil, fmt.Errorf("claudep: %w", err)
+		return nil, false, fmt.Errorf("claudep: %w", err)
 	}
-	// One-shot owns the session and tears it down; daemon mode detaches and
-	// leaves the live claude alive for the next invocation to continue.
-	defer sess.Close()
 
 	// A continued (reused) daemon session is already past the trust modal and
 	// sitting at the input prompt — only fresh launches need to wait.
 	if !reused {
 		// 45s, not 20s: first boot can be slow (loading MCP servers, plugins,
-		// large project context) before the prompt appears. Bounded by the
-		// overall Query timeout.
-		if err := claudepty.WaitForReady(runCtx, sess, 45*time.Second); err != nil {
+		// large project context) before the prompt appears. Bounded by ctx.
+		if err := claudepty.WaitForReady(ctx, sess, 45*time.Second); err != nil {
 			scr, _ := sess.CaptureScreen(0, 500*time.Millisecond)
 			screen := scr.Text()
 			// Surface what claude was actually showing so a "never reached the
@@ -113,12 +111,68 @@ func Query(ctx context.Context, opts Options) (*Result, error) {
 			if compact := compactScreen(screen); compact != "" {
 				fmt.Fprintf(opts.Stderr, "claudep: claude never reached the input prompt within 45s; last rendered screen:\n%s\n", compact)
 			}
+			_ = sess.Close()
 			if failure := claudepty.ClassifyInteractiveFailure(screen); failure != "" {
-				return nil, fmt.Errorf("claudep: %s (%w)", failure, err)
+				return nil, false, fmt.Errorf("claudep: %s (%w)", failure, err)
 			}
-			return nil, fmt.Errorf("claudep: claude never reached input prompt: %w", err)
+			return nil, false, fmt.Errorf("claudep: claude never reached input prompt: %w", err)
 		}
 	}
+
+	return sess, reused, nil
+}
+
+// StartIdle boots a pupptyeer daemon session, waits until claude is sitting at
+// the input prompt, then detaches without sending a prompt — leaving the TUI
+// warm so a later Query with the returned SessionID continues the conversation
+// without paying the startup cost. It forces daemon mode (an in-process pty
+// dies with the call, so there is nothing to leave idle). No Prompt is needed.
+func StartIdle(ctx context.Context, opts Options) (*Result, error) {
+	applyDefaults(&opts)
+	// Idle-start only makes sense against the daemon; force it on regardless of
+	// what the caller set so the session outlives this call.
+	opts.PupptyeerDaemon = true
+	sessionID := resolveSessionID(opts)
+	cwd := resolveCwd(opts)
+
+	runCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
+	defer cancel()
+
+	sess, _, err := prepareSession(runCtx, opts, sessionID, cwd)
+	if err != nil {
+		return nil, err
+	}
+	// Detach only — leave the live claude warm at the prompt for continuation.
+	_ = sess.Close()
+
+	return &Result{SessionID: sessionID, JSONLPath: claudepty.JSONLPath(sessionID)}, nil
+}
+
+// Query runs one user prompt against an interactive claude session and
+// emits the result in the chosen format to Options.Stdout. Blocks until
+// claude produces a terminal assistant message, the timeout fires, or
+// ctx is cancelled.
+func Query(ctx context.Context, opts Options) (*Result, error) {
+	if opts.Prompt == "" {
+		return nil, fmt.Errorf("claudep: Prompt is required")
+	}
+	if opts.OutputFormat == "" {
+		opts.OutputFormat = FormatText
+	}
+	applyDefaults(&opts)
+	sessionID := resolveSessionID(opts)
+	cwd := resolveCwd(opts)
+
+	runCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
+	defer cancel()
+
+	sess, _, err := prepareSession(runCtx, opts, sessionID, cwd)
+	if err != nil {
+		return nil, err
+	}
+	// One-shot owns the session and tears it down; daemon mode detaches and
+	// leaves the live claude alive for the next invocation to continue.
+	defer sess.Close()
 
 	// Record where the transcript currently ends BEFORE sending the prompt, so
 	// the tail only sees the new turn (a continued conversation already has all
