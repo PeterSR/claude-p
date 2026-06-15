@@ -24,6 +24,12 @@ func screenOf(lines ...string) *Screen {
 	return &Screen{Cols: VTCols, Rows: len(lines), Lines: lines}
 }
 
+func screenWithCursor(cur Cursor, lines ...string) *Screen {
+	s := screenOf(lines...)
+	s.Cursor = cur
+	return s
+}
+
 func (f *fakeSession) WriteInput(p []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -81,6 +87,38 @@ func TestWaitForReadyAnswersTrustThenSeesPrompt(t *testing.T) {
 	}
 	if f.captures < 2 {
 		t.Errorf("expected at least 2 captures (trust + prompt), got %d", f.captures)
+	}
+}
+
+// TestWaitForReadyViaCursorWhenTextWouldMiss is the regression guard for the
+// ghost-placeholder bug: claude renders the input row with a persistent, oddly
+// worded placeholder that the text fallback (HasInputPrompt) deliberately does
+// NOT match, but the visible cursor is parked on that "❯" row. WaitForReady
+// must still detect ready via the cursor signal. If the cursor path is ever
+// removed, this fails while the text-only test keeps passing — pinpointing the
+// regression.
+func TestWaitForReadyViaCursorWhenTextWouldMiss(t *testing.T) {
+	ready := screenWithCursor(
+		Cursor{Row: 1, Col: 4, Visible: true},
+		"────────────────────",
+		`❯  ask me anything (paste to add files)`,
+		"────────────────────",
+		"? for shortcuts · ← for agents",
+	)
+	// Precondition: the text fallback genuinely can't see this prompt, so a
+	// pass below proves the cursor path is doing the work.
+	if HasInputPrompt(ready.Text()) {
+		t.Fatal("test setup invalid: text fallback matched; pick a placeholder it can't")
+	}
+	if !ReadyForInput(ready) {
+		t.Fatal("test setup invalid: cursor signal should match this screen")
+	}
+
+	f := &fakeSession{screens: []*Screen{ready}}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := WaitForReady(ctx, f, 2*time.Second); err != nil {
+		t.Fatalf("WaitForReady via cursor: %v", err)
 	}
 }
 

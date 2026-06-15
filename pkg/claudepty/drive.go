@@ -56,7 +56,10 @@ func WaitForReady(ctx context.Context, s PTYSession, budget time.Duration) error
 			continue
 		}
 
-		if HasInputPrompt(screen) {
+		// Primary signal: claude has parked its visible cursor in the "❯"
+		// input row. Fall back to the text match if the cursor can't be
+		// trusted (e.g. a backend that doesn't report cursor position).
+		if ReadyForInput(scr) || HasInputPrompt(screen) {
 			return nil
 		}
 	}
