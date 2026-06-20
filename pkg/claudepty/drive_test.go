@@ -122,6 +122,36 @@ func TestWaitForReadyViaCursorWhenTextWouldMiss(t *testing.T) {
 	}
 }
 
+// TestWaitForReadyViaTextWhenCursorNotVisible is the complementary guard to
+// TestWaitForReadyViaCursorWhenTextWouldMiss: when a backend reports the cursor
+// as not-visible (pupptyeer 0.8.0 defaults an absent rendered cursor to
+// not-visible), the cursor signal abstains and readiness must fall back to the
+// HasInputPrompt text match. If that fallback is ever dropped, this fails while
+// the cursor test keeps passing, pinpointing the regression.
+func TestWaitForReadyViaTextWhenCursorNotVisible(t *testing.T) {
+	ready := screenWithCursor(
+		Cursor{Row: 1, Col: 2, Visible: false},
+		"────────────────────",
+		`❯ Try "fix the bug"`,
+		"────────────────────",
+	)
+	// Precondition: the cursor signal abstains (not visible), so a pass below
+	// proves the text fallback is doing the work.
+	if ReadyForInput(ready) {
+		t.Fatal("test setup invalid: cursor signal should abstain when not visible")
+	}
+	if !HasInputPrompt(ready.Text()) {
+		t.Fatal("test setup invalid: text fallback should match this prompt row")
+	}
+
+	f := &fakeSession{screens: []*Screen{ready}}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := WaitForReady(ctx, f, 2*time.Second); err != nil {
+		t.Fatalf("WaitForReady via text fallback: %v", err)
+	}
+}
+
 func TestWaitForReadyExitedProcess(t *testing.T) {
 	f := &fakeSession{screens: []*Screen{screenOf("")}, exited: true}
 	if err := WaitForReady(context.Background(), f, time.Second); err != ErrProcessExited {
