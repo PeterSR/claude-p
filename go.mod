@@ -5,8 +5,8 @@ go 1.25.10
 // pupptyeer is the PTY backbone: pkg/ptysession (in-process one-shot) and
 // clients/go (daemon).
 require (
-	github.com/PeterSR/pupptyeer v0.6.0
-	github.com/PeterSR/pupptyeer/clients/go v0.6.0
+	github.com/PeterSR/pupptyeer v0.8.0
+	github.com/PeterSR/pupptyeer/clients/go v0.8.0
 )
 
 require (

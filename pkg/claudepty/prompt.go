@@ -66,3 +66,13 @@ func looksLikeMenuOption(s string) bool {
 	}
 	return i > 0 && i < len(s) && s[i] == '.'
 }
+
+// HasStylePicker reports whether the screen is claude's first-run text-style
+// picker. Its highlighted theme row is pointed at by "❯", which ReadyForInput
+// can't tell apart from the real input prompt (the option text is unnumbered),
+// so the driver must dismiss it explicitly. Detected by the dark/light mode
+// option pair, which only co-occur on this screen.
+func HasStylePicker(screen string) bool {
+	lower := strings.ToLower(screen)
+	return strings.Contains(lower, "dark mode") && strings.Contains(lower, "light mode")
+}

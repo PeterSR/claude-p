@@ -80,3 +80,23 @@ func TestReadyForInput(t *testing.T) {
 		})
 	}
 }
+
+func TestHasStylePicker(t *testing.T) {
+	cases := []struct {
+		name   string
+		screen string
+		want   bool
+	}{
+		{"first-run picker", "Choose the text style\n❯ Dark mode\n  Light mode\n  Dark mode (colorblind)", true},
+		{"only dark mentioned", "Switched to Dark mode", false},
+		{"input prompt", "❯ Try \"fix the bug\"", false},
+		{"empty", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := HasStylePicker(c.screen); got != c.want {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}

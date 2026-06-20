@@ -22,6 +22,7 @@ const readySettle = 400 * time.Millisecond
 // than raw-byte polling. Returns nil once the main input row is visible.
 func WaitForReady(ctx context.Context, s PTYSession, budget time.Duration) error {
 	deadline := time.Now().Add(budget)
+	styleHandled := false
 	trustHandled := false
 
 	for time.Now().Before(deadline) {
@@ -43,6 +44,17 @@ func WaitForReady(ctx context.Context, s PTYSession, budget time.Duration) error
 		}
 		screen := scr.Text()
 		lower := strings.ToLower(screen)
+
+		// The first-run text-style picker shows before the trust modal. Its
+		// highlighted theme row is a "❯" selection that ReadyForInput can't
+		// distinguish from real input, so accept the auto-detected default.
+		if !styleHandled && HasStylePicker(screen) {
+			if err := s.WriteInput([]byte("\r")); err != nil {
+				return err
+			}
+			styleHandled = true
+			continue
+		}
 
 		// The trust modal can appear a beat after boot, so keep watching for
 		// it until the prompt shows — don't mark it "handled" just because an
