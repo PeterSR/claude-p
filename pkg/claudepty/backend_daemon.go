@@ -26,16 +26,14 @@ type daemonSession struct {
 	closeOnce sync.Once
 }
 
-// OpenDaemon dials the pupptyeer daemon at sock and ensures a session whose id
-// is sessionID: if one is already alive it is continued (reused=true), else a
-// fresh `claude` is launched with that id (reused=false). It attaches and
+// OpenDaemon takes an already-connected pupptyeer client and ensures a session
+// whose id is sessionID: if one is already alive it is continued (reused=true),
+// else a fresh `claude` is launched with that id (reused=false). It attaches and
 // begins draining events (required to learn the exit code and to keep capture
-// calls from stalling on backpressure).
-func OpenDaemon(sock string, l ClaudeLaunch, sessionID string) (sess PTYSession, reused bool, err error) {
-	c, err := client.Dial(sock)
-	if err != nil {
-		return nil, false, err
-	}
+// calls from stalling on backpressure). OpenDaemon takes ownership of c: it
+// closes c on every error path, and the returned session closes c when done.
+// All session calls operate in c's connection-default namespace.
+func OpenDaemon(c *client.Client, l ClaudeLaunch, sessionID string) (sess PTYSession, reused bool, err error) {
 	bin := l.Binary
 	if bin == "" {
 		bin = "claude"
@@ -75,7 +73,7 @@ func OpenDaemon(sock string, l ClaudeLaunch, sessionID string) (sess PTYSession,
 		if got != sessionID {
 			_ = c.Kill(got)
 			_ = c.Close()
-			return nil, false, fmt.Errorf("pupptyeer daemon did not honor the requested session id (created %q, wanted %q): --pupptyeer-daemon needs pupptyeer >= 0.6.0; upgrade it, or stop a stale older `pupptyeer daemon` that is still holding the socket", got, sessionID)
+			return nil, false, fmt.Errorf("pupptyeer daemon did not honor the requested session id (created %q, wanted %q): --pupptyeer-daemon needs pupptyeer >= 0.9.0; upgrade it, or stop a stale older `pupptyeer daemon` that is still holding the socket", got, sessionID)
 		}
 	}
 	// Attach so the daemon delivers this session's exit event to us, then drain

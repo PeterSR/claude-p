@@ -148,8 +148,7 @@ func init() {
 	// pupptyeer daemon backend (persistent, multi-turn). Default is an
 	// in-process pty (one-shot, no external binary).
 	f.BoolVar(&runOpts.PupptyeerDaemon, "pupptyeer-daemon", false, "drive claude through a running pupptyeer daemon (persistent; same --session-id continues the conversation) instead of an in-process pty")
-	f.StringVar(&runOpts.PupptyeerSocket, "pupptyeer-socket", "", "pupptyeer daemon socket path (default: $PUPPTYEER_SOCK or the standard per-user location)")
-	f.StringVar(&runOpts.PupptyeerBin, "pupptyeer-bin", "", "pupptyeer binary used to auto-start a daemon if none is running (default: $PUPPTYEER_BIN or pupptyeer on PATH)")
+	f.StringVar(&runOpts.PupptyeerSocket, "pupptyeer-socket", "", "pupptyeer daemon socket path (default: $PUPPTYEER_SOCK or the standard per-user location); claude-p connects to it but never starts it")
 	f.BoolVar(&runOpts.PupptyeerStartIdle, "pupptyeer-start-idle", false, "boot a daemon session, wait until claude is at the prompt, print the session id, and detach without sending a prompt (implies --pupptyeer-daemon; continue later with run --session-id <id>)")
 
 	// Passthrough flags — alphabetical to match flags.go.

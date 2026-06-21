@@ -150,15 +150,20 @@ sid=$(claude-p --pupptyeer-start-idle)
 claude-p --pupptyeer-daemon --session-id "$sid" "now do the thing"
 ```
 
-Requirements for daemon mode: **pupptyeer >= 0.6.0** (earlier daemons lack
-the caller-supplied session ids continuation relies on; claude-p detects an
-older daemon and tells you to upgrade) at `$PUPPTYEER_BIN` or on `PATH`
-(claude-p will auto-start a daemon if one isn't running) and a reachable
-daemon socket. Override the socket with `--pupptyeer-socket`
-and the binary with `--pupptyeer-bin`.
+Requirements for daemon mode: a **running** pupptyeer daemon, **>= 0.9.0**
+(0.6.0 added the caller-supplied session ids continuation relies on; 0.9.0
+added the namespaces claude-p uses for isolation). claude-p connects to the
+daemon but never starts or manages it: daemon lifecycle is a
+supervisor/system-package concern (think systemd or launchd, e.g. `pupptyeer
+daemon install`). If no daemon is reachable, claude-p fails loud with an
+actionable error instead of spawning one. Override the socket with
+`--pupptyeer-socket`; the default location is `$PUPPTYEER_SOCK` or the standard
+per-user path. The sessions claude-p creates are tagged with the `claude-p`
+namespace, so they stay isolated from any other apps sharing the same daemon
+(`pupptyeer ctl -n claude-p list`).
 
-To get both binaries via npm (the batteries-included setup — claude-p
-auto-starts the daemon once `pupptyeer` is on `PATH`):
+To get both binaries via npm (install pupptyeer alongside claude-p, then start
+its daemon once via your supervisor or `pupptyeer daemon install`):
 
 ```sh
 npm i -g @petersr/claude-p @petersr/pupptyeer

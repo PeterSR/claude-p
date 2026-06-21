@@ -1,7 +1,7 @@
-github.com/PeterSR/pupptyeer v0.8.0 h1:fDlUq7j/cLOtgE7xPufV5d3S5wuTERDP+lVLX7bMgKk=
-github.com/PeterSR/pupptyeer v0.8.0/go.mod h1:iz3HzjjYCN/mR2zRyqpKRd7CE8AalfbOrbHrPvZq6oM=
-github.com/PeterSR/pupptyeer/clients/go v0.8.0 h1:B41oXnwDGZ61cIJgM6ZaRDyBFBPGk7U9zbfEvjSEcUM=
-github.com/PeterSR/pupptyeer/clients/go v0.8.0/go.mod h1:tsuUp6sXxJHJFfNDcXL43hbHhGviPIkvcKgNVhjfs84=
+github.com/PeterSR/pupptyeer v0.9.0 h1:NYYkFOewR+lgWb0qIml5wLCUgzV7YMWRNR0Pcob4bps=
+github.com/PeterSR/pupptyeer v0.9.0/go.mod h1:iz3HzjjYCN/mR2zRyqpKRd7CE8AalfbOrbHrPvZq6oM=
+github.com/PeterSR/pupptyeer/clients/go v0.9.0 h1:zYJyg2q/J7XICNOFksKKsE+FiEqKeCoExCyTfvINqms=
+github.com/PeterSR/pupptyeer/clients/go v0.9.0/go.mod h1:tsuUp6sXxJHJFfNDcXL43hbHhGviPIkvcKgNVhjfs84=
 github.com/charmbracelet/colorprofile v0.4.2 h1:BdSNuMjRbotnxHSfxy+PCSa4xAmz7szw70ktAtWRYrY=
 github.com/charmbracelet/colorprofile v0.4.2/go.mod h1:0rTi81QpwDElInthtrQ6Ni7cG0sDtwAd4C4le060fT8=
 github.com/charmbracelet/ultraviolet v0.0.0-20260303162955-0b88c25f3fff h1:uY7A6hTokHPJBHfq7rj9Y/wm+IAjOghZTxKfVW6QLvw=

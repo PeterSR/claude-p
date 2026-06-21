@@ -71,19 +71,16 @@ type Options struct {
 	// PupptyeerDaemon drives claude through a running pupptyeer daemon instead
 	// of an in-process pty. The claude TUI then outlives the invocation, so a
 	// later Query with the same SessionID continues the same conversation
-	// without paying the TUI-startup cost. Requires a pupptyeer daemon (and, to
-	// auto-start one, the pupptyeer binary at PupptyeerBin / $PUPPTYEER_BIN /
-	// PATH).
+	// without paying the TUI-startup cost. Requires a reachable pupptyeer
+	// daemon: claude-p connects to it (or fails loud) but never spawns or
+	// manages it. The sessions it creates are isolated in the "claude-p"
+	// namespace.
 	PupptyeerDaemon bool
 
 	// PupptyeerSocket overrides the daemon socket path. Empty = the standard
 	// resolution ($PUPPTYEER_SOCK, else $XDG_RUNTIME_DIR/pupptyeer/daemon.sock,
 	// else $TMPDIR/pupptyeer-<user>/daemon.sock).
 	PupptyeerSocket string
-
-	// PupptyeerBin is the pupptyeer binary used to auto-start a daemon if none
-	// is reachable. Empty = $PUPPTYEER_BIN, then "pupptyeer" on PATH.
-	PupptyeerBin string
 
 	// PupptyeerStartIdle boots a daemon session, waits until claude is sitting
 	// at the input prompt, then detaches without sending a prompt — leaving the
