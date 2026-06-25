@@ -169,7 +169,89 @@ its daemon once via your supervisor or `pupptyeer daemon install`):
 npm i -g @petersr/claude-p @petersr/pupptyeer
 ```
 
+### High-level driving MCP server (`claude-p mcp`)
+
+`claude-p mcp` runs a Model Context Protocol server (over stdio) that lets an
+outer Claude Code — or any MCP client — drive inner, interactive `claude`
+sessions with **conversation-shaped** tools instead of raw keystrokes. It is a
+level up from a low-level pty MCP (such as pupptyeer's `send_keys` /
+`read_screen`): the `prompt` tool does the whole send-and-wait-for-the-answer
+dance for you, lifting the reply straight from claude's persisted transcript
+rather than scraping the screen.
+
+Add it to Claude Code:
+
+```sh
+claude mcp add claude-p-drive -- claude-p mcp --backend inproc
+```
+
+Tools exposed:
+
+| Tool             | What it does                                                            |
+| ---------------- | ----------------------------------------------------------------------- |
+| `launch_claude`  | Boot (or, in daemon mode, continue) a session; wait until it's ready    |
+| `prompt`         | Send a message and get the model's **full answer back** as text         |
+| `prompt_async`   | Send a message **without blocking**; collect the answer later           |
+| `read_response`  | Read the result of a `prompt_async` turn (poll, or block up to a budget) |
+| `read_transcript`| Review past turns / what an in-flight turn is doing (optionally tools)  |
+| `read_screen`    | Peek at the TUI when a turn needs a keystroke, not a reply              |
+| `send_keys`      | Answer an interactive prompt (menu choice, Esc, Ctrl-C)                 |
+| `wait_for_ready` | Block until the session is back at its input prompt                     |
+| `interrupt`      | Send Esc to cancel a running turn                                       |
+| `list_sessions`  | List in-process sessions **and** every claude-p session in the daemon  |
+| `stop_claude`    | Cleanly stop a session (Ctrl-C twice, then terminate)                  |
+
+**Non-blocking turns.** A long turn doesn't have to block the tool call. Call
+`prompt_async` to fire the message and return immediately; it hands back a
+`since_offset` and — for daemon-backed sessions — a ready-to-arm pupptyeer
+command that blocks until the inner claude goes idle (turn done):
+
+```
+prompt_async  ->  arm the pupptyeer monitor (out-of-band) / go do other work
+              ->  on wakeup: read_response(since_offset)  ->  {done, text}
+```
+
+`read_response` reads claude's own end-of-turn marker from the transcript, so it
+is authoritative: use it to confirm completion even after the idle monitor fires
+(if it returns `done:false`, the turn is still running — wait and re-check).
+
+**State model.** Daemon-backed sessions are addressed purely by id — the server
+keeps no per-session state for them. So `list_sessions` reflects the daemon
+itself (sessions left warm by a prior server, or created by another client, show
+up automatically), driving a session a fresh server never launched just adopts it
+by id, and a server restart loses nothing. In-process sessions are the stateful
+exception: the `claude` TUI lives inside the server process, so it is tracked in
+a small registry and ends when the server does (each `list_sessions` entry has a
+`tracked` flag marking which is which).
+
+`--backend daemon` (the default) is that stateless path and needs a running
+[pupptyeer](https://github.com/PeterSR/pupptyeer) daemon;
+`--backend inproc` needs nothing external but lives only for the server's
+lifetime. Individual `launch_claude` calls can override the backend per session.
+The server is built on the `claudep.Session` / `claudep.LaunchDaemon` APIs, so
+anything it does you can also do directly from Go.
+
 ## Library usage
+
+### Multi-turn session
+
+`claudep.Session` is a live, multi-turn handle to one conversation: launch once,
+then `Prompt` repeatedly and get each answer back as text (no screen-scraping).
+It is the building block behind `claude-p mcp`.
+
+```go
+sess, err := claudep.Open(ctx, claudep.Options{Model: "sonnet"})
+if err != nil {
+    panic(err)
+}
+defer sess.Close()
+
+answer, _ := sess.Prompt(ctx, "name three primes")
+fmt.Println(answer)
+followup, _ := sess.Prompt(ctx, "now their product") // same conversation
+fmt.Println(followup)
+```
+
 
 ### Quick query
 

@@ -77,20 +77,7 @@ func resolveCwd(opts Options) string {
 // reports a continued daemon session that's already past the trust modal and at
 // the prompt, so it skips the wait.
 func prepareSession(ctx context.Context, opts Options, sessionID, cwd string) (claudepty.PTYSession, bool, error) {
-	launch := claudepty.ClaudeLaunch{
-		Binary:             opts.Binary,
-		MCPConfig:          firstNonEmpty(opts.MCPConfig),
-		StrictMCPConfig:    opts.StrictMCPConfig,
-		AllowedTools:       joinComma(opts.AllowedTools),
-		AppendSystemPrompt: opts.AppendSystemPrompt,
-		SystemPrompt:       opts.SystemPrompt,
-		PermissionMode:     opts.PermissionMode,
-		SessionID:          sessionID,
-		Model:              opts.Model,
-		AddDirs:            opts.AddDirs,
-		Cwd:                cwd,
-		ExtraArgs:          remainingPassthroughArgs(opts),
-	}
+	launch := buildLaunch(opts, sessionID, cwd)
 
 	sess, reused, err := newBackend(opts, sessionID, launch)
 	if err != nil {
@@ -120,6 +107,25 @@ func prepareSession(ctx context.Context, opts Options, sessionID, cwd string) (c
 	}
 
 	return sess, reused, nil
+}
+
+// buildLaunch maps the claude-p Options onto the claudepty.ClaudeLaunch knobs
+// both backends consume. Shared by the in-process and daemon launch paths.
+func buildLaunch(opts Options, sessionID, cwd string) claudepty.ClaudeLaunch {
+	return claudepty.ClaudeLaunch{
+		Binary:             opts.Binary,
+		MCPConfig:          firstNonEmpty(opts.MCPConfig),
+		StrictMCPConfig:    opts.StrictMCPConfig,
+		AllowedTools:       joinComma(opts.AllowedTools),
+		AppendSystemPrompt: opts.AppendSystemPrompt,
+		SystemPrompt:       opts.SystemPrompt,
+		PermissionMode:     opts.PermissionMode,
+		SessionID:          sessionID,
+		Model:              opts.Model,
+		AddDirs:            opts.AddDirs,
+		Cwd:                cwd,
+		ExtraArgs:          remainingPassthroughArgs(opts),
+	}
 }
 
 // StartIdle boots a pupptyeer daemon session, waits until claude is sitting at
