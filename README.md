@@ -206,17 +206,20 @@ Tools exposed:
 
 **Non-blocking turns.** A long turn doesn't have to block the tool call. Call
 `prompt_async` to fire the message and return immediately; it hands back a
-`since_offset` and — for daemon-backed sessions — a ready-to-arm pupptyeer
-command that blocks until the inner claude goes idle (turn done):
+`since_offset` and a ready-to-arm `monitor.command` that blocks until the turn
+completes, then exits 0:
 
 ```
-prompt_async  ->  arm the pupptyeer monitor (out-of-band) / go do other work
+prompt_async  ->  arm monitor.command out-of-band / go do other work
               ->  on wakeup: read_response(since_offset)  ->  {done, text}
 ```
 
-`read_response` reads claude's own end-of-turn marker from the transcript, so it
-is authoritative: use it to confirm completion even after the idle monitor fires
-(if it returns `done:false`, the turn is still running — wait and re-check).
+`monitor.command` is a (hidden) `claude-p await-turn` invocation that waits on
+claude's own end-of-turn marker in the transcript, not on pty idle, so it fires
+the instant the turn actually finishes and works for both backends. `read_response`
+reads that same marker, so you can equally just block on it (`timeout_ms>0`) or
+poll it (`timeout_ms=0`) with no monitor at all; either way it is the
+authoritative completion check.
 
 **State model.** Daemon-backed sessions are addressed purely by id — the server
 keeps no per-session state for them. So `list_sessions` reflects the daemon

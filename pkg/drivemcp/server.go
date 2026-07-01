@@ -322,30 +322,21 @@ func (s *Server) promptAsyncTool() toolReg {
 			return mcpgo.NewToolResultErrorf("prompt_async: %v", err), nil
 		}
 
-		monitor := map[string]any{}
-		if sess.IsDaemon() {
-			// expect blocks until the inner claude's pty goes idle for --idle (its
-			// spinner stops emitting when the turn ends), exiting 0; --timeout caps
-			// the wait. Arm this via your harness's monitor/background-command
-			// mechanism, then read_response to confirm with claude's own marker.
-			cmd := fmt.Sprintf("pupptyeer ctl -n %s expect --idle 3s --timeout 600s %s",
-				claudep.PupptyeerNamespace, id)
-			if sock := sess.PupptyeerSocket(); sock != "" {
-				cmd = "PUPPTYEER_SOCK=" + sock + " " + cmd
-			}
-			monitor["pupptyeer_expect"] = cmd
-			monitor["note"] = "Arm pupptyeer_expect as a background/monitor command; it returns (exit 0) when the inner claude goes idle. Then call read_response."
-		} else {
-			monitor["pupptyeer_expect"] = nil
-			monitor["note"] = "This is an in-process session, invisible to pupptyeer. Either poll read_response, or relaunch with backend=daemon to enable out-of-band monitoring."
-		}
+		// A ready-to-arm command that blocks until THIS turn's end-of-turn marker
+		// lands in claude's transcript, then exits 0 — authoritative (not pty
+		// idle) and backend-independent. Arm it as a background/monitor command to
+		// be woken when the turn finishes; then call read_response for the answer.
+		monitorCmd := fmt.Sprintf("claude-p await-turn --session-id %s --since %d --timeout 600", id, sinceOffset)
 
 		return structured(map[string]any{
 			"session_id":      id,
 			"since_offset":    sinceOffset,
 			"transcript_path": transcriptPath,
-			"monitor":         monitor,
-			"next":            "When the monitor fires (or after a while), call read_response with this session_id and since_offset. done=false means the turn is still running — wait more.",
+			"monitor": map[string]any{
+				"command": monitorCmd,
+				"note":    "Arm this as a background/monitor command; it exits 0 the moment this turn completes (it blocks on claude's end-of-turn marker, not pty idle). Then call read_response for the answer.",
+			},
+			"next": "Either block now with read_response(timeout_ms>0), poll with read_response(timeout_ms=0), or arm monitor.command out-of-band and call read_response when it fires. done=false means the turn is still running.",
 		}), nil
 	}}
 }

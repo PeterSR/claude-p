@@ -308,13 +308,34 @@ func (s *Session) PollTurn(sinceOffset int64) (text string, done bool, err error
 // CollectTurn blocks up to ctx for the turn started at sinceOffset to finish,
 // returning the assistant's final text. done is false (no error) if ctx expires
 // first — the turn is still running, so try again later. It reads claude's own
-// end-of-turn marker, so it is the authoritative completion check even after a
-// heuristic wakeup (e.g. a pupptyeer idle monitor) has fired.
+// end-of-turn marker, so it is the authoritative completion check.
 func (s *Session) CollectTurn(ctx context.Context, sinceOffset int64) (text string, done bool, err error) {
 	path := s.transcriptPath()
 	if path == "" {
 		return "", false, fmt.Errorf("claudep: no transcript for session %s yet", s.sessionID)
 	}
+	return awaitTurnAt(ctx, path, sinceOffset)
+}
+
+// AwaitTurn blocks up to ctx for the turn started at sinceOffset in sessionID's
+// transcript to finish, returning the assistant's final text. done is false (no
+// error) if ctx expires first. It needs only the session id (no live session)
+// because it reads claude's persisted transcript off disk, so it works for
+// either backend — it is the primitive behind the `claude-p await-turn` helper
+// that a monitor can arm to be notified the moment a turn completes.
+func AwaitTurn(ctx context.Context, sessionID string, sinceOffset int64) (text string, done bool, err error) {
+	path := claudepty.JSONLPath(sessionID)
+	if path == "" {
+		return "", false, fmt.Errorf("claudep: no transcript on disk for session %s", sessionID)
+	}
+	return awaitTurnAt(ctx, path, sinceOffset)
+}
+
+// awaitTurnAt is the shared wait: tail the transcript from sinceOffset until the
+// terminal event that follows this turn's user echo. Requiring the user echo
+// first is what makes it robust to a prior turn's turn_duration marker still
+// flushing just past the offset.
+func awaitTurnAt(ctx context.Context, path string, sinceOffset int64) (text string, done bool, err error) {
 	var finalText string
 	sawUserTurn := false
 	terr := tailJSONL(ctx, path, sinceOffset, func(ev tailEvent) (bool, error) {
