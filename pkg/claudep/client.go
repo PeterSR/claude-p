@@ -11,9 +11,10 @@ import (
 	"github.com/PeterSR/claude-p/pkg/claudepty"
 )
 
-// compactScreen drops blank lines and trailing spaces from a rendered screen so
-// it can be shown in a diagnostic without the 200x60 padding.
-func compactScreen(s string) string {
+// CompactScreen drops blank lines and trailing spaces from a rendered screen so
+// it can be shown without the 200x60 padding (in a diagnostic, or as a tool
+// result).
+func CompactScreen(s string) string {
 	var b strings.Builder
 	for _, line := range strings.Split(s, "\n") {
 		if strings.TrimSpace(line) == "" {
@@ -77,20 +78,7 @@ func resolveCwd(opts Options) string {
 // reports a continued daemon session that's already past the trust modal and at
 // the prompt, so it skips the wait.
 func prepareSession(ctx context.Context, opts Options, sessionID, cwd string) (claudepty.PTYSession, bool, error) {
-	launch := claudepty.ClaudeLaunch{
-		Binary:             opts.Binary,
-		MCPConfig:          firstNonEmpty(opts.MCPConfig),
-		StrictMCPConfig:    opts.StrictMCPConfig,
-		AllowedTools:       joinComma(opts.AllowedTools),
-		AppendSystemPrompt: opts.AppendSystemPrompt,
-		SystemPrompt:       opts.SystemPrompt,
-		PermissionMode:     opts.PermissionMode,
-		SessionID:          sessionID,
-		Model:              opts.Model,
-		AddDirs:            opts.AddDirs,
-		Cwd:                cwd,
-		ExtraArgs:          remainingPassthroughArgs(opts),
-	}
+	launch := buildLaunch(opts, sessionID, cwd)
 
 	sess, reused, err := newBackend(opts, sessionID, launch)
 	if err != nil {
@@ -108,7 +96,7 @@ func prepareSession(ctx context.Context, opts Options, sessionID, cwd string) (c
 			// Surface what claude was actually showing so a "never reached the
 			// prompt" failure is diagnosable (login screen, an unrecognised
 			// modal, slow boot, a nested-session oddity, ...) instead of opaque.
-			if compact := compactScreen(screen); compact != "" {
+			if compact := CompactScreen(screen); compact != "" {
 				fmt.Fprintf(opts.Stderr, "claudep: claude never reached the input prompt within 45s; last rendered screen:\n%s\n", compact)
 			}
 			_ = sess.Close()
@@ -120,6 +108,25 @@ func prepareSession(ctx context.Context, opts Options, sessionID, cwd string) (c
 	}
 
 	return sess, reused, nil
+}
+
+// buildLaunch maps the claude-p Options onto the claudepty.ClaudeLaunch knobs
+// both backends consume. Shared by the in-process and daemon launch paths.
+func buildLaunch(opts Options, sessionID, cwd string) claudepty.ClaudeLaunch {
+	return claudepty.ClaudeLaunch{
+		Binary:             opts.Binary,
+		MCPConfig:          firstNonEmpty(opts.MCPConfig),
+		StrictMCPConfig:    opts.StrictMCPConfig,
+		AllowedTools:       joinComma(opts.AllowedTools),
+		AppendSystemPrompt: opts.AppendSystemPrompt,
+		SystemPrompt:       opts.SystemPrompt,
+		PermissionMode:     opts.PermissionMode,
+		SessionID:          sessionID,
+		Model:              opts.Model,
+		AddDirs:            opts.AddDirs,
+		Cwd:                cwd,
+		ExtraArgs:          remainingPassthroughArgs(opts),
+	}
 }
 
 // StartIdle boots a pupptyeer daemon session, waits until claude is sitting at

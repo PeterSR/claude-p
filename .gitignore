@@ -34,6 +34,9 @@ go.work.sum
 # Agent scratch (notes, captures, in-flight investigations)
 .agent-workspace/
 
+# Locally built binaries
+/bin/
+
 # Generated per-platform npm packages (built by npm/build.mjs on release)
 npm/claude-p-*/
 # Bundled binary placed inside the meta package by build.mjs / `npm i`

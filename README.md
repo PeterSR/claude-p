@@ -1,4 +1,4 @@
-# claude-p — a Go drop-in for `claude -p`
+# claude-p - a Go drop-in for `claude -p`
 
 > Use what you already paid for: `claude -p`-style automation on top of
 > your interactive Claude Code subscription session.
@@ -44,7 +44,7 @@ without paying the TUI-startup cost each time (see
 [Daemon mode](#daemon-mode-persistent-multi-turn)).
 
 It also ships an **MCP bridge framework** so the same primitives that
-power the CLI can be embedded in your own Go program — for example, an
+power the CLI can be embedded in your own Go program - for example, an
 orchestrator that drives an inner interactive `claude` via MCP tools.
 
 ## Install
@@ -113,14 +113,14 @@ absence of accurate cost data is a property of the interactive backend.
 ### Daemon mode (persistent, multi-turn)
 
 By default each `claude-p` call spawns a fresh in-process `claude`, runs
-one prompt, and exits — no daemon, no extra binary. That pays the
+one prompt, and exits - no daemon, no extra binary. That pays the
 TUI-startup cost every time and keeps no conversation state between
 calls.
 
 With `--pupptyeer-daemon`, claude-p instead drives `claude` inside a
 [pupptyeer](https://github.com/PeterSR/pupptyeer) daemon. The `claude`
 TUI stays alive between invocations, so a later call with the **same
-`--session-id`** continues the same conversation — skipping startup
+`--session-id`** continues the same conversation - skipping startup
 *and* keeping context:
 
 ```sh
@@ -138,7 +138,7 @@ claude-p boots a fresh `claude --resume <id>` to reload the conversation.
 
 To pre-warm a session without sending anything yet, use
 `--pupptyeer-start-idle`. It boots a daemon session, waits until claude is
-sitting at the input prompt, prints the session id, and detaches — leaving
+sitting at the input prompt, prints the session id, and detaches - leaving
 the TUI idle and ready. It implies `--pupptyeer-daemon`, so the session
 outlives the call. A later `--session-id` run reattaches and continues:
 
@@ -146,7 +146,7 @@ outlives the call. A later `--session-id` run reattaches and continues:
 # Boot a warm, idle session and capture its id:
 sid=$(claude-p --pupptyeer-start-idle)
 
-# Later — reattach to the already-ready session and send the first prompt:
+# Later - reattach to the already-ready session and send the first prompt:
 claude-p --pupptyeer-daemon --session-id "$sid" "now do the thing"
 ```
 
@@ -169,7 +169,95 @@ its daemon once via your supervisor or `pupptyeer daemon install`):
 npm i -g @petersr/claude-p @petersr/pupptyeer
 ```
 
+### High-level driving MCP server (`claude-p mcp`)
+
+`claude-p mcp` runs a Model Context Protocol server (over stdio) that lets an
+outer Claude Code - or any MCP client - drive inner, interactive `claude`
+sessions with **conversation-shaped** tools instead of raw keystrokes. It is a
+level up from a low-level pty MCP (such as pupptyeer's `send_keys` /
+`read_screen`): the `prompt` tool does the whole send-and-wait-for-the-answer
+dance for you, lifting the reply straight from claude's persisted transcript
+rather than scraping the screen.
+
+Add it to Claude Code:
+
+```sh
+claude mcp add claude-p-drive -- claude-p mcp --backend daemon
+```
+
+(`--backend daemon` is the default and needs a running pupptyeer daemon; use
+`--backend inproc` if you'd rather run without one. See the backend note below.)
+
+Tools exposed:
+
+| Tool             | What it does                                                            |
+| ---------------- | ----------------------------------------------------------------------- |
+| `launch_claude`  | Boot (or, in daemon mode, continue) a session; wait until it's ready    |
+| `prompt`         | Send a message and get the model's **full answer back** as text         |
+| `prompt_async`   | Send a message **without blocking**; collect the answer later           |
+| `read_response`  | Read the result of a `prompt_async` turn (poll, or block up to a budget) |
+| `read_transcript`| Review past turns / what an in-flight turn is doing (optionally tools)  |
+| `read_screen`    | Peek at the TUI when a turn needs a keystroke, not a reply              |
+| `send_keys`      | Answer an interactive prompt (menu choice, Esc, Ctrl-C)                 |
+| `wait_for_ready` | Block until the session is back at its input prompt                     |
+| `interrupt`      | Send Esc to cancel a running turn                                       |
+| `list_sessions`  | List in-process sessions **and** every claude-p session in the daemon  |
+| `stop_claude`    | Cleanly stop a session (Ctrl-C twice, then terminate)                  |
+
+**Non-blocking turns.** A long turn doesn't have to block the tool call. Call
+`prompt_async` to fire the message and return immediately; it hands back a
+`since_offset` and a ready-to-arm `monitor.command` that blocks until the turn
+completes, then exits 0:
+
+```
+prompt_async  ->  arm monitor.command out-of-band / go do other work
+              ->  on wakeup: read_response(since_offset)  ->  {done, text}
+```
+
+`monitor.command` is a (hidden) `claude-p await-turn` invocation that waits on
+claude's own end-of-turn marker in the transcript, not on pty idle, so it fires
+the instant the turn actually finishes and works for both backends. `read_response`
+reads that same marker, so you can equally just block on it (`timeout_ms>0`) or
+poll it (`timeout_ms=0`) with no monitor at all; either way it is the
+authoritative completion check.
+
+**State model.** Daemon-backed sessions are addressed purely by id - the server
+keeps no per-session state for them. So `list_sessions` reflects the daemon
+itself (sessions left warm by a prior server, or created by another client, show
+up automatically), driving a session a fresh server never launched just adopts it
+by id, and a server restart loses nothing. In-process sessions are the stateful
+exception: the `claude` TUI lives inside the server process, so it is tracked in
+a small registry and ends when the server does (each `list_sessions` entry has a
+`tracked` flag marking which is which).
+
+`--backend daemon` (the default) is that stateless path and needs a running
+[pupptyeer](https://github.com/PeterSR/pupptyeer) daemon;
+`--backend inproc` needs nothing external but lives only for the server's
+lifetime. Individual `launch_claude` calls can override the backend per session.
+The server is built on the `claudep.Session` / `claudep.LaunchDaemon` APIs, so
+anything it does you can also do directly from Go.
+
 ## Library usage
+
+### Multi-turn session
+
+`claudep.Session` is a live, multi-turn handle to one conversation: launch once,
+then `Prompt` repeatedly and get each answer back as text (no screen-scraping).
+It is the building block behind `claude-p mcp`.
+
+```go
+sess, err := claudep.Open(ctx, claudep.Options{Model: "sonnet"})
+if err != nil {
+    panic(err)
+}
+defer sess.Close()
+
+answer, _ := sess.Prompt(ctx, "name three primes")
+fmt.Println(answer)
+followup, _ := sess.Prompt(ctx, "now their product") // same conversation
+fmt.Println(followup)
+```
+
 
 ### Quick query
 
@@ -200,8 +288,8 @@ func main() {
 ### Driving a pty session yourself
 
 If you want to drive interactive `claude` for something other than the
-`claude -p` use case — say, you want to send multiple prompts, observe
-the TUI directly, or interleave keystrokes with tool calls — use
+`claude -p` use case - say, you want to send multiple prompts, observe
+the TUI directly, or interleave keystrokes with tool calls - use
 `pkg/claudepty` instead.
 
 ```go
@@ -242,7 +330,7 @@ The pattern:
 1. Your process hosts an in-process `BridgeServer` on a unix socket,
    with whatever tools you want to expose registered against it.
 2. You write an MCP config pointing at a small "relay" subcommand in
-   your own binary — that subcommand calls `claudemcp/relay.Serve`.
+   your own binary - that subcommand calls `claudemcp/relay.Serve`.
 3. You spawn interactive `claude` with `--mcp-config` pointing at the
    config you just wrote.
 4. claude launches the relay; the relay dials your bridge socket; tool
@@ -299,7 +387,7 @@ If `claude` works for you, `claude-p` does.
 
 ### Does it consume my Agent SDK credit?
 
-No — that's the point. Tokens are billed against your interactive
+No - that's the point. Tokens are billed against your interactive
 subscription limits, the same way as normal Claude Code TUI usage.
 
 ### Why is `total_cost_usd` always null?
@@ -321,7 +409,7 @@ streaming, use the Anthropic API directly.
 
 ### Does it work on Windows?
 
-It should — the pty layer uses [creack/pty](https://github.com/creack/pty),
+It should - the pty layer uses [creack/pty](https://github.com/creack/pty),
 which has ConPTY support on Windows. The persisted JSONL lookup uses
 `%USERPROFILE%\.claude\projects`. Windows is built in CI and shipped as
 a release archive, but the project is developed primarily on Linux; if
@@ -338,7 +426,7 @@ programs that want to embed the behaviour rather than shell out.
 
 ### Can I use `--dangerously-skip-permissions`?
 
-You can — the flag is forwarded — but you usually shouldn't. Combining
+You can - the flag is forwarded - but you usually shouldn't. Combining
 `--permission-mode acceptEdits` with an explicit `--allowedTools`
 allow-list achieves the same auto-approval effect with much smaller
 blast radius.
