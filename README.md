@@ -182,8 +182,11 @@ rather than scraping the screen.
 Add it to Claude Code:
 
 ```sh
-claude mcp add claude-p-drive -- claude-p mcp --backend inproc
+claude mcp add claude-p-drive -- claude-p mcp --backend daemon
 ```
+
+(`--backend daemon` is the default and needs a running pupptyeer daemon; use
+`--backend inproc` if you'd rather run without one. See the backend note below.)
 
 Tools exposed:
 

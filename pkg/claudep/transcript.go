@@ -29,6 +29,12 @@ func ReadTranscript(sessionID string, lastN int, includeTools bool) ([]Transcrip
 	if path == "" {
 		return nil, fmt.Errorf("claudep: no transcript on disk for session %s", sessionID)
 	}
+	return readTranscriptFrom(path, lastN, includeTools)
+}
+
+// readTranscriptFrom is ReadTranscript against an explicit path, split out so the
+// parsing is testable without a real ~/.claude/projects transcript.
+func readTranscriptFrom(path string, lastN int, includeTools bool) ([]TranscriptEntry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
