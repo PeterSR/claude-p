@@ -11,9 +11,10 @@ import (
 	"github.com/PeterSR/claude-p/pkg/claudepty"
 )
 
-// compactScreen drops blank lines and trailing spaces from a rendered screen so
-// it can be shown in a diagnostic without the 200x60 padding.
-func compactScreen(s string) string {
+// CompactScreen drops blank lines and trailing spaces from a rendered screen so
+// it can be shown without the 200x60 padding (in a diagnostic, or as a tool
+// result).
+func CompactScreen(s string) string {
 	var b strings.Builder
 	for _, line := range strings.Split(s, "\n") {
 		if strings.TrimSpace(line) == "" {
@@ -95,7 +96,7 @@ func prepareSession(ctx context.Context, opts Options, sessionID, cwd string) (c
 			// Surface what claude was actually showing so a "never reached the
 			// prompt" failure is diagnosable (login screen, an unrecognised
 			// modal, slow boot, a nested-session oddity, ...) instead of opaque.
-			if compact := compactScreen(screen); compact != "" {
+			if compact := CompactScreen(screen); compact != "" {
 				fmt.Fprintf(opts.Stderr, "claudep: claude never reached the input prompt within 45s; last rendered screen:\n%s\n", compact)
 			}
 			_ = sess.Close()

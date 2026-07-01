@@ -9,7 +9,7 @@ import (
 )
 
 // TranscriptEntry is one message lifted from a session's persisted JSONL: the
-// role, its visible text (thinking is excluded), and — when asked — the names of
+// role, its visible text (thinking is excluded), and - when asked - the names of
 // any tools the assistant invoked in that message.
 type TranscriptEntry struct {
 	Role  string   `json:"role"`            // "user" | "assistant"
@@ -22,8 +22,8 @@ type TranscriptEntry struct {
 // for sessions this process never launched). lastN > 0 keeps only the most
 // recent N entries; includeTools attaches the tool names each assistant message
 // invoked (useful for seeing what an in-flight turn is doing). Messages with
-// neither visible text nor (when requested) tool activity — bare thinking blocks
-// or tool_result echoes — are skipped.
+// neither visible text nor (when requested) tool activity - bare thinking blocks
+// or tool_result echoes - are skipped.
 func ReadTranscript(sessionID string, lastN int, includeTools bool) ([]TranscriptEntry, error) {
 	path := claudepty.JSONLPath(sessionID)
 	if path == "" {

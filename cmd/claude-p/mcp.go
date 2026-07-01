@@ -23,7 +23,7 @@ var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Run a high-level claude-driving MCP server over stdio",
 	Long: `mcp runs a Model Context Protocol server (over stdio) that lets an outer
-Claude Code — or any MCP client — drive inner, interactive ` + "`claude`" + ` sessions
+Claude Code - or any MCP client - drive inner, interactive ` + "`claude`" + ` sessions
 with conversation-shaped tools instead of raw keystrokes.
 
 Tools exposed:

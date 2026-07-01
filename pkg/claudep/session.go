@@ -1,12 +1,9 @@
 package claudep
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"sync"
 	"time"
 
@@ -14,8 +11,8 @@ import (
 )
 
 // Session is a live, multi-turn handle to one interactive claude conversation.
-// Unlike Query — which launches, sends one prompt, lifts the answer, and tears
-// the session down in a single call — a Session stays open across many Prompt
+// Unlike Query - which launches, sends one prompt, lifts the answer, and tears
+// the session down in a single call - a Session stays open across many Prompt
 // calls so a caller can hold a conversation, peek at the TUI, answer permission
 // prompts, and continue. It is the building block behind the high-level driving
 // MCP (pkg/drivemcp); library callers can use it directly too.
@@ -42,8 +39,8 @@ type Session struct {
 // the caller owns. Close (or Kill) it when done. ctx bounds the launch +
 // ready-wait; pass a context with a deadline so a stuck boot can't hang forever.
 //
-// Open honours the same Options as Query — model, permission-mode, cwd, backend
-// selection (PupptyeerDaemon), allowed tools, system prompt, and so on — but
+// Open honours the same Options as Query - model, permission-mode, cwd, backend
+// selection (PupptyeerDaemon), allowed tools, system prompt, and so on - but
 // ignores Prompt (there is no prompt to send at open time) and the output-format
 // fields (a Session returns text from Prompt rather than emitting an envelope).
 func Open(ctx context.Context, opts Options) (*Session, error) {
@@ -81,7 +78,7 @@ func (s *Session) Reused() bool { return s.reused }
 
 // Prompt sends one user message and blocks until claude finishes the turn,
 // returning the assistant's final text. "Finishes" means the turn's terminal
-// event has landed in the transcript — either a terminal assistant text message
+// event has landed in the transcript - either a terminal assistant text message
 // or the trailing system turn_duration marker (which also covers tool-only
 // turns that end without a text reply, in which case the returned text is
 // empty). ctx bounds the wait.
@@ -112,37 +109,27 @@ func (s *Session) Prompt(ctx context.Context, prompt string) (string, error) {
 	if jsonlPath == "" {
 		jsonlPath = claudepty.WaitForJSONL(s.sessionID, 10*time.Second)
 		if jsonlPath == "" {
-			return "", fmt.Errorf("claudep: persisted JSONL never appeared for session %s — is claude actually running?", s.sessionID)
+			return "", fmt.Errorf("claudep: persisted JSONL never appeared for session %s - is claude actually running?", s.sessionID)
 		}
 		s.jsonlPath = jsonlPath
 	}
 
-	// Mirror Query's terminal-detection: take the last assistant text block as
-	// the answer, and stop on the first terminal event AFTER this turn's user
-	// echo (so a prior turn's still-flushing turn_duration can't end us early).
-	var finalText string
-	sawUserTurn := false
-	err := tailJSONL(ctx, jsonlPath, startOffset, func(ev tailEvent) (bool, error) {
-		if ev.Type == "user" {
-			sawUserTurn = true
-		}
-		if ev.Type == "assistant" && ev.Text != "" {
-			finalText = ev.Text
-		}
-		if ev.Terminal && sawUserTurn {
-			return true, nil
-		}
-		return false, nil
-	})
-	if err != nil && finalText == "" {
-		return "", fmt.Errorf("claudep: %w", err)
+	text, done, err := awaitTurnAt(ctx, jsonlPath, startOffset)
+	if err != nil {
+		return "", err
 	}
-	return finalText, nil
+	if !done {
+		// ctx (the caller's timeout) fired before this turn reached its terminal
+		// event. Do NOT return the interim text as if it were the answer: the
+		// caller must be able to tell a completed turn from a cut-off one.
+		return "", fmt.Errorf("claudep: turn did not complete before the deadline")
+	}
+	return text, nil
 }
 
 // Screen waits up to budget for claude's TUI to be quiet for settle, then
 // returns the rendered grid as text (one line per row). Use it to inspect what
-// claude is showing — a permission prompt, a modal, a menu — when a turn needs a
+// claude is showing - a permission prompt, a modal, a menu - when a turn needs a
 // keystroke rather than a prompt. quiet is false if no readable grid appeared
 // within budget.
 func (s *Session) Screen(settle, budget time.Duration) (screen string, quiet bool) {
@@ -154,7 +141,7 @@ func (s *Session) Screen(settle, budget time.Duration) (screen string, quiet boo
 // SendKeys writes raw text into the pty, interpreting Go-style escape sequences
 // (\r Enter, \n newline, \t tab, \x03 Ctrl-C, \uNNNN). Use it to answer an
 // interactive prompt claude is blocking on (e.g. "1\r" to pick option 1, or
-// "\x1b" to dismiss a panel) — not for normal conversation, which is Prompt's
+// "\x1b" to dismiss a panel) - not for normal conversation, which is Prompt's
 // job. Returns the number of bytes written.
 func (s *Session) SendKeys(text string) (int, error) {
 	s.mu.Lock()
@@ -207,8 +194,8 @@ func (s *Session) Kill() error {
 
 // Shutdown stops the inner claude cleanly: two Ctrl-C's (the keystrokes a human
 // uses to quit the TUI) with a short grace period, then a Kill if it hasn't
-// exited. Unlike Close — which in daemon mode only detaches and leaves claude
-// warm for continuation — Shutdown ends the conversation regardless of backend.
+// exited. Unlike Close - which in daemon mode only detaches and leaves claude
+// warm for continuation - Shutdown ends the conversation regardless of backend.
 func (s *Session) Shutdown() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -227,7 +214,7 @@ func (s *Session) PupptyeerSocket() string { return s.socket }
 
 // StartTurn sends a prompt WITHOUT waiting for the reply, returning the
 // transcript byte offset captured just before the send (the "since" cursor for
-// PollTurn / CollectTurn — so a later read sees exactly this turn) and the
+// PollTurn / CollectTurn - so a later read sees exactly this turn) and the
 // transcript path. Use it for fire-and-continue flows where the caller arms its
 // own out-of-band wakeup (e.g. a pupptyeer idle monitor on a daemon session)
 // instead of blocking on the turn. Pair it with PollTurn/CollectTurn to read the
@@ -258,75 +245,25 @@ func (s *Session) StartTurn(prompt string) (sinceOffset int64, transcriptPath st
 	return sinceOffset, path, nil
 }
 
-// PollTurn scans the transcript from sinceOffset once, without blocking, and
-// reports whether the turn has finished. done is true with the assistant's
-// final text once this turn's terminal event has landed; otherwise done is
-// false (the turn is still running, or no transcript exists yet). Use it after
-// an out-of-band wakeup to authoritatively confirm completion.
-func (s *Session) PollTurn(sinceOffset int64) (text string, done bool, err error) {
-	path := s.transcriptPath()
-	if path == "" {
-		return "", false, nil
-	}
-	f, ferr := os.Open(path)
-	if ferr != nil {
-		if errors.Is(ferr, os.ErrNotExist) {
-			return "", false, nil
-		}
-		return "", false, ferr
-	}
-	defer f.Close()
-	if sinceOffset > 0 {
-		if fi, e := f.Stat(); e == nil && fi.Size() >= sinceOffset {
-			if _, e := f.Seek(sinceOffset, io.SeekStart); e != nil {
-				return "", false, e
-			}
-		}
-	}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	var finalText string
-	sawUserTurn := false
-	for sc.Scan() {
-		ev, derr := decodeJSONLLine(bytesTrimNewline(append([]byte(nil), sc.Bytes()...)))
-		if derr != nil {
-			continue
-		}
-		if ev.Type == "user" {
-			sawUserTurn = true
-		}
-		if ev.Type == "assistant" && ev.Text != "" {
-			finalText = ev.Text
-		}
-		if ev.Terminal && sawUserTurn {
-			return finalText, true, nil
-		}
-	}
-	return "", false, sc.Err()
-}
-
-// CollectTurn blocks up to ctx for the turn started at sinceOffset to finish,
-// returning the assistant's final text. done is false (no error) if ctx expires
-// first — the turn is still running, so try again later. It reads claude's own
-// end-of-turn marker, so it is the authoritative completion check.
-func (s *Session) CollectTurn(ctx context.Context, sinceOffset int64) (text string, done bool, err error) {
-	path := s.transcriptPath()
-	if path == "" {
-		return "", false, fmt.Errorf("claudep: no transcript for session %s yet", s.sessionID)
-	}
-	return awaitTurnAt(ctx, path, sinceOffset)
-}
-
 // AwaitTurn blocks up to ctx for the turn started at sinceOffset in sessionID's
 // transcript to finish, returning the assistant's final text. done is false (no
-// error) if ctx expires first. It needs only the session id (no live session)
+// error) if ctx expires first, including when the transcript file has not been
+// written yet (a just-started turn whose first event is slow to land): that is
+// "not done", not an error. It needs only the session id (no live session)
 // because it reads claude's persisted transcript off disk, so it works for
-// either backend — it is the primitive behind the `claude-p await-turn` helper
+// either backend - it is the primitive behind the `claude-p await-turn` helper
 // that a monitor can arm to be notified the moment a turn completes.
 func AwaitTurn(ctx context.Context, sessionID string, sinceOffset int64) (text string, done bool, err error) {
+	// The transcript path only resolves once the file exists, so poll for it
+	// (bounded by ctx) rather than treating a not-yet-written file as an error.
 	path := claudepty.JSONLPath(sessionID)
-	if path == "" {
-		return "", false, fmt.Errorf("claudep: no transcript on disk for session %s", sessionID)
+	for path == "" {
+		select {
+		case <-ctx.Done():
+			return "", false, nil
+		case <-time.After(100 * time.Millisecond):
+			path = claudepty.JSONLPath(sessionID)
+		}
 	}
 	return awaitTurnAt(ctx, path, sinceOffset)
 }
@@ -357,19 +294,4 @@ func awaitTurnAt(ctx context.Context, path string, sinceOffset int64) (text stri
 		return "", false, fmt.Errorf("claudep: %w", terr)
 	}
 	return finalText, true, nil
-}
-
-// transcriptPath returns the cached transcript path, resolving and caching it
-// from disk on first use.
-func (s *Session) transcriptPath() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.jsonlPath != "" {
-		return s.jsonlPath
-	}
-	if p := claudepty.JSONLPath(s.sessionID); p != "" {
-		s.jsonlPath = p
-		return p
-	}
-	return ""
 }

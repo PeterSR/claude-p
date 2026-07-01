@@ -16,8 +16,8 @@ import (
 // the daemon (ListSessions) rather than by watching an attached event stream.
 //
 // Close is a no-op: a DaemonRef owns neither the session (the daemon does) nor
-// the client (the caller does). The shared client is safe for concurrent use —
-// the pupptyeer client correlates replies by request id — so one client can back
+// the client (the caller does). The shared client is safe for concurrent use -
+// the pupptyeer client correlates replies by request id - so one client can back
 // many DaemonRefs at once.
 type DaemonRef struct {
 	c       *client.Client
@@ -97,7 +97,7 @@ func (d *DaemonRef) Close() error { return nil }
 // EnsureDaemonSession makes sure a daemon session with id sessionID exists,
 // continuing an already-alive one (reused=true) or spawning a fresh `claude`
 // with the given launch flags (reused=false). Unlike OpenDaemon it neither
-// attaches nor takes ownership of the client — it is the stateless launch
+// attaches nor takes ownership of the client - it is the stateless launch
 // primitive behind a driver that addresses sessions purely by id. All calls use
 // the client's connection-default namespace.
 func EnsureDaemonSession(c *client.Client, l ClaudeLaunch, sessionID string) (reused bool, err error) {
@@ -119,7 +119,7 @@ func EnsureDaemonSession(c *client.Client, l ClaudeLaunch, sessionID string) (re
 		}
 	}
 	// Drive new_session directly (not the client's EnsureSession helper) so we
-	// can verify the daemon honored our requested id — everything downstream
+	// can verify the daemon honored our requested id - everything downstream
 	// (capture, the JSONL transcript, continuation) is keyed on claude's
 	// --session-id, so a mismatched pty id would break the very next call.
 	got, nerr := c.NewSession(bin, BuildClaudeArgs(l), l.Cwd, envSliceToMap(env), VTCols, VTRows,

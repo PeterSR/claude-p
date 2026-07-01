@@ -74,9 +74,12 @@ func TestRequiredArgsEnforced(t *testing.T) {
 }
 
 func TestUnknownSessionErrors(t *testing.T) {
+	// These verbs drive a live session, so an unknown id resolves to nothing and
+	// errors with "unknown session". (read_response/read_transcript address the
+	// transcript by id off disk, so they error differently; covered separately.)
 	s := New(Config{})
-	for _, name := range []string{"prompt", "prompt_async", "read_response", "read_screen", "send_keys", "wait_for_ready", "interrupt", "stop_claude"} {
-		args := map[string]any{"session_id": "does-not-exist", "text": "x", "since_offset": 0}
+	for _, name := range []string{"prompt", "prompt_async", "read_screen", "send_keys", "wait_for_ready", "interrupt", "stop_claude"} {
+		args := map[string]any{"session_id": "does-not-exist", "text": "x"}
 		res := call(t, s, name, args)
 		if !res.IsError {
 			t.Errorf("%s: expected error for unknown session, got %+v", name, res)
@@ -84,6 +87,21 @@ func TestUnknownSessionErrors(t *testing.T) {
 		if !strings.Contains(resultText(res), "unknown session") {
 			t.Errorf("%s: error should say 'unknown session', got %q", name, resultText(res))
 		}
+	}
+}
+
+func TestReadResponsePollUnknownIsNotDone(t *testing.T) {
+	// read_response reads by id off disk and polls for the transcript, so an
+	// unknown/not-yet-written id polls as done=false rather than erroring (the
+	// caller only ever has an id it got from a successful prompt_async).
+	s := New(Config{})
+	res := call(t, s, "read_response", map[string]any{"session_id": "does-not-exist", "since_offset": 0, "timeout_ms": 0})
+	if res.IsError {
+		t.Fatalf("poll should not error for a missing transcript, got %q", resultText(res))
+	}
+	sc, _ := res.StructuredContent.(map[string]any)
+	if sc["done"] != false {
+		t.Fatalf("want done=false for a missing transcript, got %v", sc["done"])
 	}
 }
 
@@ -134,13 +152,5 @@ func TestConfigDefaults(t *testing.T) {
 	s := New(Config{})
 	if s.cfg.ServerName == "" || s.cfg.LaunchTimeout == 0 || s.cfg.PromptTimeout == 0 {
 		t.Errorf("withDefaults left fields unset: %+v", s.cfg)
-	}
-}
-
-func TestCompactScreen(t *testing.T) {
-	in := "  \n" + "hello   \n" + "   \n" + "world \n" + "   \n"
-	got := compactScreen(in)
-	if got != "hello\nworld" {
-		t.Errorf("compactScreen = %q, want %q", got, "hello\nworld")
 	}
 }

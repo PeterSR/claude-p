@@ -24,7 +24,7 @@ func TestAwaitTurnAtCompletes(t *testing.T) {
 }
 
 // A prior turn's turn_duration can still be flushing just past the offset. The
-// wait must NOT fire on it — it must wait for the terminal event that follows
+// wait must NOT fire on it - it must wait for the terminal event that follows
 // THIS turn's user echo. If the sawUserTurn guard regressed, this would return
 // on the leading marker with empty text.
 func TestAwaitTurnAtIgnoresStaleMarker(t *testing.T) {

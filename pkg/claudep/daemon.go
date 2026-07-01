@@ -93,7 +93,7 @@ type DaemonSessionInfo struct {
 
 // ListDaemon returns the claude-p sessions the daemon currently holds. Because
 // the daemon is the source of truth, this surfaces sessions left warm by a prior
-// run or created by another client — not just ones the caller launched.
+// run or created by another client - not just ones the caller launched.
 func ListDaemon(c *client.Client) ([]DaemonSessionInfo, error) {
 	infos, err := c.ListSessions()
 	if err != nil {

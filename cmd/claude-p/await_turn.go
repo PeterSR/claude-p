@@ -18,8 +18,8 @@ var (
 
 // awaitTurnCmd is a machine-facing helper: it blocks until an inner claude turn
 // completes, then exits 0. It exists to be armed as a background/monitor command
-// by a client of the `claude-p mcp` server — prompt_async hands back the exact
-// invocation string — so it is hidden from the everyday CLI (like mcp-relay).
+// by a client of the `claude-p mcp` server - prompt_async hands back the exact
+// invocation string - so it is hidden from the everyday CLI (like mcp-relay).
 // Because it waits on claude's persisted transcript, not the pty, it is
 // authoritative (the end-of-turn marker, not screen quiescence) and works for
 // both the in-process and daemon backends.
