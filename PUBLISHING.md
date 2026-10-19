@@ -1,12 +1,13 @@
 # Publishing
 
-claude-p ships two public artifacts, versioned in lockstep with the `vX.Y.Z`
+claude-p ships three public artifacts, versioned in lockstep with the `vX.Y.Z`
 git tag:
 
 | Artifact | Registry | Source | Auth (steady state) |
 | --- | --- | --- | --- |
 | GitHub Release (binaries) | GitHub | goreleaser | `GITHUB_TOKEN` (built in) |
 | `@petersr/claude-p` (+ 6 platform pkgs) | npm | `npm/` | npm OIDC trusted publishing |
+| `ghcr.io/petersr/claude-p:<version>` (+ `latest`) | ghcr.io | `docker/`, goreleaser `dockers_v2` | `GITHUB_TOKEN` (`packages: write`) |
 
 Both are driven by pushing a `v*` tag through `.github/workflows/release.yml`.
 The npm job is gated behind a repo variable so the workflow is safe to land
@@ -53,6 +54,19 @@ automation secret, and set `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` on the
 2. Commit, then `git tag vX.Y.Z && git push origin main --tags`.
 3. The `release` workflow publishes the GitHub binaries and (if `PUBLISH_NPM=1`)
    the npm packages.
+
+## Docker image
+
+Published by the same goreleaser run (multi-arch, via QEMU + buildx), using the
+freshly built binaries, so it works while the GitHub release is still a draft.
+Before a release, check the pinned `PUPPTYEER_VERSION` and `CLAUDE_CODE_VERSION`
+defaults at the top of `docker/Dockerfile` (and the README "Docker" table) are
+the ones you want; a pupptyeer bump also updates `PUPPTYEER_SHA256_amd64` and
+`PUPPTYEER_SHA256_arm64` there. After the first push the package is private: set it to public
+under the GitHub package settings and link it to the repo. Validate locally with
+`make docker` and `goreleaser check`. `goreleaser release --snapshot --clean
+--skip=publish` also builds the image, but its arm64 half needs QEMU binfmt
+on the build host (CI gets it from `docker/setup-qemu-action`).
 
 ## Local validation (no upload)
 

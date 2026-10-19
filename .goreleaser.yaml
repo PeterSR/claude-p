@@ -48,6 +48,29 @@ archives:
       - README.md
       - LICENSE
 
+# Multi-arch image on ghcr.io. The freshly built linux binaries are placed in
+# the build context (linux/<arch>/claude-p), because the draft release's assets
+# are not downloadable while this runs. pupptyeer and Claude Code are fetched
+# inside the Dockerfile at the versions pinned there (build args).
+dockers_v2:
+  - id: claude-p
+    ids:
+      - claude-p
+    images:
+      - ghcr.io/petersr/claude-p
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    dockerfile: docker/Dockerfile
+    extra_files:
+      - docker/entrypoint.sh
+    build_args:
+      CLAUDE_P_VERSION: "{{ .Version }}"
+      REVISION: "{{ .FullCommit }}"
+
 checksum:
   name_template: 'checksums.txt'
 

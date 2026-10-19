@@ -372,6 +372,145 @@ This pattern lets you keep tool implementations in your own process
 (with access to your state, logs, etc.) while still letting an LLM call
 them through claude's MCP support.
 
+## Docker
+
+`ghcr.io/petersr/claude-p:<version>` is a ready-to-run image (debian bookworm
+slim, linux/amd64 and linux/arm64) that pins all three pieces together:
+
+| Piece | Where it comes from | Pinned by |
+| --- | --- | --- |
+| claude-p | the binary built by the same release | the image tag |
+| pupptyeer | its GitHub release archive, checked against a sha256 pinned in the Dockerfile | build arg `PUPPTYEER_VERSION` (0.10.2) |
+| Claude Code CLI | `downloads.claude.ai`: the version's `manifest.json` is checked against its GPG signature and Anthropic's pinned release key fingerprint, the binary against the manifest's sha256 | build arg `CLAUDE_CODE_VERSION` (2.1.303) |
+
+Every check fails the build when it does not match.
+
+The versions are also image labels (`dev.petersr.pupptyeer.version`,
+`dev.petersr.claude-code.version`, `dev.petersr.claude-p.version`, plus the
+standard `org.opencontainers.image.*`). Claude Code is installed from its
+versioned download URL rather than by piping `install.sh`: the installer
+always bootstraps the latest build and then installs into the user's home with
+symlinks, which neither pins reliably nor survives `COPY --from`. Auto-update
+is switched off (`DISABLE_AUTOUPDATER=1`).
+
+Everything is a real file under `/opt/claude-p/bin` (`claude-p`, `pupptyeer`,
+`claude`, `tini`, `entrypoint.sh`), also symlinked into `/usr/local/bin`. The
+process runs as user `claude` (uid/gid 1000, `HOME=/home/claude`, which is
+world-writable so any `--user` uid can use it). The
+entrypoint runs under tini, starts the pupptyeer daemon in the background
+(socket `/tmp/pupptyeer/daemon.sock`, `PUPPTYEER_SOCK` is exported), waits for
+the socket, then `exec`s your command (default `claude-p --help`). The daemon
+and its ptys die with the container. The daemon banner goes to stderr, so
+stdout stays the command's own.
+
+```sh
+docker run --rm \
+  -v "$HOME/.claude:/home/claude/.claude" \
+  -v "$PWD/container-claude.json:/home/claude/.claude.json" \
+  ghcr.io/petersr/claude-p:0.6.0 \
+  claude-p --pupptyeer-daemon "hello"
+```
+
+(`container-claude.json` is explained under "Credentials" below. Leave out
+`-t`: it merges stderr into stdout. On an SELinux host such as Fedora, add
+`:z` to each `-v`.)
+
+### As a base image
+
+```dockerfile
+FROM ghcr.io/petersr/claude-p:0.6.0
+# Add your own code; the entrypoint and PATH are inherited.
+COPY . /app
+```
+
+### Credentials and `~/.claude`
+
+claude reads its login from `~/.claude/.credentials.json`. That file exists on
+a Linux host; a macOS host keeps the login in the Keychain instead, so its
+`~/.claude` holds no credentials to mount. claude-p strips `ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and every `CLAUDE_CODE_*`
+variable (so also `CLAUDE_CODE_OAUTH_TOKEN`) from the environment it starts
+claude with, so the mounted file is the way in. Never bake credentials into an
+image.
+
+Mount the host directory: `-v $HOME/.claude:/home/claude/.claude`. The
+credentials file is mode 0600, so the container user must have the host
+user's uid: either `docker run --user "$(id -u):$(id -g)"` (no passwd entry
+is needed, HOME stays `/home/claude`) or build with
+`--build-arg CLAUDE_UID=$(id -u) --build-arg CLAUDE_GID=$(id -g)`.
+
+The rest of claude's state, onboarding and which folders are trusted, lives in
+`~/.claude.json`, which sits next to the directory, not inside it. On a fresh
+profile claude shows, in order, a theme picker, a login screen (which valid
+mounted credentials should skip; not checked here, no credentials were used),
+and a "trust this folder" modal for the working
+directory. claude-p answers the theme picker. It also presses Enter on the
+trust modal, but in Claude Code 2.1.303 that modal preselects "No, exit", so
+Enter quits claude and the run fails ("claude process exited"). Until claude-p
+handles that, give the container a `~/.claude.json` that has finished
+onboarding and already trusts the directory claude runs in (`/home/claude`
+unless you pass `--cwd` or change the working directory):
+
+```sh
+echo '{"hasCompletedOnboarding": true,
+       "projects": {"/home/claude": {"hasTrustDialogAccepted": true}}}' \
+  > container-claude.json
+```
+
+and mount it as `/home/claude/.claude.json` (claude updates it in place, so
+make it writable by the container user). A separate file is better than the
+host's own `~/.claude.json`: the host's trust entries are for host paths, and
+a host claude and a container claude writing one file at once can lose each
+other's changes. Checked without credentials: with this file claude-p gets
+all the way to sending the prompt and reports "Not logged in", without it the
+run stops at the trust modal. Setting `CLAUDE_CONFIG_DIR=/home/claude/.claude`
+instead makes claude keep `.claude.json` inside the mounted directory, which
+starts from a fresh state and so needs the same preparation.
+
+### Using only the binaries on another base
+
+Copy the directory and add what the image otherwise provides:
+
+```dockerfile
+FROM python:3.13-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --uid 1000 --create-home claude \
+ && chmod 1777 /home/claude
+COPY --from=ghcr.io/petersr/claude-p:0.6.0 /opt/claude-p/bin /opt/claude-p/bin
+ENV PATH=/opt/claude-p/bin:$PATH DISABLE_AUTOUPDATER=1 HOME=/home/claude
+USER claude
+WORKDIR /home/claude
+ENTRYPOINT ["/opt/claude-p/bin/tini", "-g", "--", "/opt/claude-p/bin/entrypoint.sh"]
+```
+
+You must supply: a non-root user whose uid owns the mounted `~/.claude`,
+a HOME that user can write (set `HOME` explicitly: a `--user` uid with no
+passwd entry otherwise gets `/`; the `chmod 1777` lets any uid write it), a
+working directory matching the trusted one in `~/.claude.json` (see above),
+`PATH` including that directory, the entrypoint (or
+your own supervision of `pupptyeer daemon`), and CA certificates. `claude-p`,
+`pupptyeer` and `tini` are static binaries; `claude` is dynamic and needs
+glibc (it runs on Debian 12's 2.36; anything glibc-based and similarly recent
+works, Alpine and other musl bases do not, although Anthropic publishes a
+separate musl build of claude). The entrypoint is plain `sh` and resolves its
+siblings by its own location. Tested with `python:3.13-slim`.
+
+### Building and bumping versions
+
+```sh
+make docker        # builds ghcr.io/petersr/claude-p:<version> and claude-p:local
+make docker DOCKER_CLAUDE_CODE_VERSION=2.1.303
+make docker DOCKER_PUPPTYEER_VERSION=0.10.2 DOCKER_PUPPTYEER_SHA256=<sha256 of the host arch archive>
+```
+
+The defaults live as `ARG`s at the top of `docker/Dockerfile`; to bump one,
+edit the default (and the table above), then release. A pupptyeer bump also
+needs both archives' sha256 (`PUPPTYEER_SHA256_amd64`, `PUPPTYEER_SHA256_arm64`,
+from that release's `checksums.txt`); a Claude Code bump needs nothing else. Find the current
+Claude Code version with
+`curl -s https://downloads.claude.ai/claude-code-releases/latest`.
+
 ## FAQ
 
 ### Is this an API client / Anthropic SDK wrapper?

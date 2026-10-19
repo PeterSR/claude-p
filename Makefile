@@ -14,7 +14,7 @@ LDFLAGS := -s -w \
 
 CMD := ./cmd/claude-p
 
-.PHONY: build install vet test ci clean
+.PHONY: build install vet test ci clean docker
 
 # Build the binary into ./bin (gitignored) with version baked in.
 build:
@@ -33,4 +33,26 @@ test:
 ci: vet test
 
 clean:
-	rm -f bin/claude-p
+	rm -rf bin/claude-p bin/docker-ctx
+
+# Local image, same Dockerfile as the release. Builds the linux binary for the
+# host arch (override DOCKER_ARCH) into a context laid out like goreleaser's
+# dockers_v2 context (<os>/<arch>/claude-p, docker/entrypoint.sh), then tags ghcr.io/petersr/claude-p:<ver>
+# and claude-p:local. Pin overrides (a pupptyeer version needs its archive's
+# sha256 for DOCKER_ARCH too):
+#   make docker DOCKER_PUPPTYEER_VERSION=x.y.z DOCKER_PUPPTYEER_SHA256=<sha256> DOCKER_CLAUDE_CODE_VERSION=x.y.z
+DOCKER_ARCH ?= $(shell go env GOARCH)
+DOCKER_CTX  := bin/docker-ctx
+DOCKER_VER  := $(patsubst v%,%,$(VERSION))
+DOCKER_ARGS := $(if $(DOCKER_PUPPTYEER_VERSION),--build-arg PUPPTYEER_VERSION=$(DOCKER_PUPPTYEER_VERSION)) \
+	$(if $(DOCKER_PUPPTYEER_SHA256),--build-arg PUPPTYEER_SHA256_$(DOCKER_ARCH)=$(DOCKER_PUPPTYEER_SHA256)) \
+	$(if $(DOCKER_CLAUDE_CODE_VERSION),--build-arg CLAUDE_CODE_VERSION=$(DOCKER_CLAUDE_CODE_VERSION))
+
+docker:
+	rm -rf $(DOCKER_CTX)
+	mkdir -p $(DOCKER_CTX)/linux/$(DOCKER_ARCH) $(DOCKER_CTX)/docker
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKER_ARCH) go build -ldflags "$(LDFLAGS)" -o $(DOCKER_CTX)/linux/$(DOCKER_ARCH)/claude-p $(CMD)
+	cp docker/entrypoint.sh $(DOCKER_CTX)/docker/entrypoint.sh
+	docker build --platform linux/$(DOCKER_ARCH) -f docker/Dockerfile \
+		--build-arg CLAUDE_P_VERSION=$(DOCKER_VER) --build-arg REVISION=$(COMMIT) $(DOCKER_ARGS) \
+		-t ghcr.io/petersr/claude-p:$(DOCKER_VER) -t claude-p:local $(DOCKER_CTX)
