@@ -169,6 +169,32 @@ its daemon once via your supervisor or `pupptyeer daemon install`):
 npm i -g @petersr/claude-p @petersr/pupptyeer
 ```
 
+### MCP servers and the first prompt
+
+The TUI connects MCP servers in the background and accepts input before their
+tools are registered, so a prompt typed at once into a freshly started claude can
+be answered as if there were no tools ("no tools are available"); a resumed
+session is affected too, because every start is fresh. The screen shows nothing
+that says the tools are ready, so when `--mcp-config` is given claude-p waits a
+fixed grace after the input prompt appears and before it sends: 2.5s by default,
+`--mcp-settle 5s` to change it (a Go duration, so the unit is required),
+`--mcp-settle 0s` or a negative value to turn it off. The wait is part of the
+`--timeout` budget. A warm daemon session that is continued has already settled
+and is not delayed.
+
+The grace is a guess, not a signal. Measured on Claude Code 2.1.303, a server
+connected about a second after the prompt appeared and its tools landed 0.3 to
+0.8s after that, so 2.5s leaves some margin; a server that is slow to start
+(fetched by `npx`, started in a container, on a loaded machine) can still miss
+it, and then the answer is a longer `--mcp-settle`. The cost is that every fresh
+run with `--mcp-config` is 2.5s slower even when its tools were ready sooner.
+Only `--mcp-config` triggers the wait: servers claude loads from its own
+settings, a project `.mcp.json` or a plugin race the same way and are not waited
+for. (The `CLAUDE_CODE_MCP_*` switches in the Claude Code binary, among them
+`CLAUDE_CODE_MCP_STARTUP_WAIT_MS`, only wait for the connection, not for the
+tools, and did not remove the race when measured; claude-p strips every
+`CLAUDE_CODE_*` variable anyway.)
+
 ### High-level driving MCP server (`claude-p mcp`)
 
 `claude-p mcp` runs a Model Context Protocol server (over stdio) that lets an

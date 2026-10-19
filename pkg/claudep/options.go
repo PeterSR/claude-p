@@ -63,6 +63,18 @@ type Options struct {
 	// Timeout caps the entire run. Default 5 minutes.
 	Timeout time.Duration
 
+	// MCPSettle is how long to wait after a freshly started claude shows its
+	// input prompt, when it was given an MCP config, before the prompt is sent.
+	// The TUI connects MCP servers in the background and accepts input before
+	// their tools are registered, so a prompt sent at once is sometimes answered
+	// as if there were no tools. There is no on-screen signal for the tools
+	// being ready, so this is a fixed grace. Zero means "use the default":
+	// applyDefaults sets DefaultMCPSettle when there is an MCP config. A
+	// negative value disables the wait (the CLI maps an explicit
+	// --mcp-settle 0 to that). Counted inside Timeout, since it runs within
+	// the run's context, and cut short if that context ends.
+	MCPSettle time.Duration
+
 	// Stdout / Stderr receive the formatted output and diagnostics
 	// respectively. Default to os.Stdout / os.Stderr.
 	Stdout io.Writer

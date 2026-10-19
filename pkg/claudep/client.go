@@ -11,6 +11,26 @@ import (
 	"github.com/PeterSR/claude-p/pkg/claudepty"
 )
 
+// DefaultMCPSettle is the grace given to a freshly started claude's MCP servers
+// to register their tools before the first prompt is typed (see Options.MCPSettle).
+// Measured: the tools land 0.3 to 0.8s after the server connects, which itself
+// happens about a second after the prompt first appears.
+const DefaultMCPSettle = 2500 * time.Millisecond
+
+// settleMCP waits out Options.MCPSettle after a fresh start with an MCP config.
+// It returns early, with the context's error, if ctx ends first.
+func settleMCP(ctx context.Context, opts Options) error {
+	if len(opts.MCPConfig) == 0 || opts.MCPSettle <= 0 {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(opts.MCPSettle):
+		return nil
+	}
+}
+
 // CompactScreen drops blank lines and trailing spaces from a rendered screen so
 // it can be shown without the 200x60 padding (in a diagnostic, or as a tool
 // result).
@@ -47,6 +67,9 @@ func applyDefaults(opts *Options) {
 	}
 	if opts.Timeout == 0 {
 		opts.Timeout = 5 * time.Minute
+	}
+	if opts.MCPSettle == 0 && len(opts.MCPConfig) > 0 {
+		opts.MCPSettle = DefaultMCPSettle
 	}
 }
 
@@ -104,6 +127,13 @@ func prepareSession(ctx context.Context, opts Options, sessionID, cwd string) (c
 				return nil, false, fmt.Errorf("claudep: %s (%w)", failure, err)
 			}
 			return nil, false, fmt.Errorf("claudep: claude never reached input prompt: %w", err)
+		}
+	}
+
+	if !reused {
+		if err := settleMCP(ctx, opts); err != nil {
+			_ = sess.Close()
+			return nil, false, err
 		}
 	}
 

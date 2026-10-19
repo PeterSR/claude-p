@@ -61,6 +61,9 @@ func LaunchDaemon(ctx context.Context, c *client.Client, opts Options) (sessionI
 			}
 			return "", false, fmt.Errorf("claudep: claude never reached input prompt: %w", werr)
 		}
+		if err := settleMCP(ctx, opts); err != nil {
+			return "", false, err
+		}
 	}
 	return sessionID, reused, nil
 }

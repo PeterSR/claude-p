@@ -50,6 +50,12 @@ var (
 )
 
 func runE(cmd *cobra.Command, args []string) error {
+	// An explicit --mcp-settle 0 means "do not wait". Options treats a zero
+	// MCPSettle as "use the default", so hand it on as negative (off).
+	if cmd.Flags().Changed("mcp-settle") && runOpts.MCPSettle == 0 {
+		runOpts.MCPSettle = -1
+	}
+
 	// Idle-start boots a warm daemon session and detaches without a prompt, so
 	// it skips prompt resolution entirely. Handle it before everything else.
 	if runOpts.PupptyeerStartIdle {
@@ -178,6 +184,7 @@ func init() {
 	f.BoolVar(&runOpts.IDE, "ide", false, "passed to claude")
 	f.StringVar(&runOpts.JSONSchema, "json-schema", "", "passed to claude")
 	f.StringSliceVar(&runOpts.MCPConfig, "mcp-config", nil, "passed to claude --mcp-config (repeatable)")
+	f.DurationVar(&runOpts.MCPSettle, "mcp-settle", 0, "wait this long after a fresh claude shows its prompt before sending, when --mcp-config is given, so its MCP tools are registered (default 2.5s; 0 or negative disables; needs a unit, e.g. 5s, 0s)")
 	f.BoolVar(&runOpts.MCPDebug, "mcp-debug", false, "passed to claude")
 	f.StringSliceVar(&runOpts.Tools, "tools", nil, "passed to claude --tools (repeatable)")
 	f.StringVar(&runOpts.Model, "model", "", "passed to claude")
