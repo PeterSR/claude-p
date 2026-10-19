@@ -37,9 +37,10 @@ clean:
 
 # Local image, same Dockerfile as the release. Builds the linux binary for the
 # host arch (override DOCKER_ARCH) into a context laid out like goreleaser's
-# dockers_v2 context (<os>/<arch>/claude-p, docker/entrypoint.sh), then tags ghcr.io/petersr/claude-p:<ver>
-# and claude-p:local. Pin overrides (a pupptyeer version needs its archive's
-# sha256 for DOCKER_ARCH too):
+# dockers_v2 context (<os>/<arch>/claude-p, docker/entrypoint.sh), then tags only
+# claude-p:local (never the ghcr name: a local tag would shadow the published
+# image for any FROM or COPY --from naming it). Pin overrides (a pupptyeer
+# version needs its archive's sha256 for DOCKER_ARCH too):
 #   make docker DOCKER_PUPPTYEER_VERSION=x.y.z DOCKER_PUPPTYEER_SHA256=<sha256> DOCKER_CLAUDE_CODE_VERSION=x.y.z
 DOCKER_ARCH ?= $(shell go env GOARCH)
 DOCKER_CTX  := bin/docker-ctx
@@ -55,4 +56,4 @@ docker:
 	cp docker/entrypoint.sh $(DOCKER_CTX)/docker/entrypoint.sh
 	docker build --platform linux/$(DOCKER_ARCH) -f docker/Dockerfile \
 		--build-arg CLAUDE_P_VERSION=$(DOCKER_VER) --build-arg REVISION=$(COMMIT) $(DOCKER_ARGS) \
-		-t ghcr.io/petersr/claude-p:$(DOCKER_VER) -t claude-p:local $(DOCKER_CTX)
+		-t claude-p:local $(DOCKER_CTX)

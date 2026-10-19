@@ -499,7 +499,7 @@ siblings by its own location. Tested with `python:3.13-slim`.
 ### Building and bumping versions
 
 ```sh
-make docker        # builds ghcr.io/petersr/claude-p:<version> and claude-p:local
+make docker        # builds claude-p:local (only that tag, so it never shadows the published image)
 make docker DOCKER_CLAUDE_CODE_VERSION=2.1.303
 make docker DOCKER_PUPPTYEER_VERSION=0.10.2 DOCKER_PUPPTYEER_SHA256=<sha256 of the host arch archive>
 ```
