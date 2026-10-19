@@ -59,11 +59,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # npm >= 11.5 is required for OIDC trusted publishing.
-      - run: npm install -g npm@latest
+      # npm >= 11.5 is required for OIDC trusted publishing. Pinned to the 11
+      # line rather than latest, whose node floor moves on its own (npm 12.2
+      # needs node >= 22.22.2) and would break a release with no change here.
+      - run: npm install -g npm@11
 
       - name: Build per-platform packages
         run: node npm/build.mjs "${GITHUB_REF_NAME#v}"
