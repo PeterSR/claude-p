@@ -100,3 +100,23 @@ func TestHasStylePicker(t *testing.T) {
 		})
 	}
 }
+
+func TestTrustSelection(t *testing.T) {
+	cases := []struct {
+		name       string
+		screen     string
+		yes, found bool
+	}{
+		{"yes preselected", "Do you trust the files in this folder?\n ❯ 1. Yes, I trust this folder\n   2. No, exit", true, true},
+		{"no preselected", "Do you trust the files in this folder?\n   1. Yes, I trust this folder\n ❯ 2. No, exit", false, true},
+		{"unnumbered, no first (2.1.303)", "Quick safety check: Is this a project you created or one you trust?\n ❯ No, exit\n   Yes, I trust this folder\n Enter to confirm", false, true},
+		{"unnumbered, moved to yes", "Quick safety check\n   No, exit\n ❯ Yes, I trust this folder", true, true},
+		{"no menu yet", "Do you trust the files in this folder?", false, false},
+	}
+	for _, c := range cases {
+		yes, found := TrustSelection(c.screen)
+		if yes != c.yes || found != c.found {
+			t.Errorf("%s: got (%v, %v), want (%v, %v)", c.name, yes, found, c.yes, c.found)
+		}
+	}
+}

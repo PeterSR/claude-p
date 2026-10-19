@@ -24,6 +24,7 @@ func WaitForReady(ctx context.Context, s PTYSession, budget time.Duration) error
 	deadline := time.Now().Add(budget)
 	styleHandled := false
 	trustHandled := false
+	trustMoves := 0
 
 	for time.Now().Before(deadline) {
 		select {
@@ -60,7 +61,17 @@ func WaitForReady(ctx context.Context, s PTYSession, budget time.Duration) error
 		// it until the prompt shows — don't mark it "handled" just because an
 		// early screen didn't have it yet (that would skip a late modal).
 		if !trustHandled && (strings.Contains(lower, "trust this folder") || strings.Contains(lower, "do you trust")) {
-			// Option 1 (Yes) is preselected; Enter confirms.
+			// Which answer is preselected has changed between versions, so
+			// move to "Yes" first (Enter on "No, exit" quits claude) and only
+			// confirm once it is highlighted; the next screen shows the move.
+			yes, found := TrustSelection(screen)
+			if found && !yes && trustMoves < 3 {
+				if err := s.WriteInput([]byte("\x1b[B")); err != nil {
+					return err
+				}
+				trustMoves++
+				continue
+			}
 			if err := s.WriteInput([]byte("\r")); err != nil {
 				return err
 			}

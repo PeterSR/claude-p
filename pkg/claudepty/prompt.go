@@ -57,6 +57,28 @@ func promptRowRemainder(line string) (rest string, ok bool) {
 	return strings.TrimSpace(strings.TrimPrefix(trimmed, promptChar)), true
 }
 
+// TrustSelection reads the trust modal's highlighted row: found is whether a
+// "❯" row naming an answer is on screen, yes whether it is the accepting one.
+// Claude Code has changed both which answer is preselected (2.1.303 puts
+// "❯ No, exit" first) and whether the rows are numbered ("❯ 1. Yes, ..."), so
+// a driver looks before it presses Enter.
+func TrustSelection(screen string) (yes, found bool) {
+	for _, line := range strings.Split(screen, "\n") {
+		rest, ok := promptRowRemainder(line)
+		if !ok {
+			continue
+		}
+		answer := strings.ToLower(strings.TrimLeft(rest, "0123456789. "))
+		switch {
+		case strings.HasPrefix(answer, "yes"):
+			return true, true
+		case strings.HasPrefix(answer, "no"):
+			return false, true
+		}
+	}
+	return false, false
+}
+
 // looksLikeMenuOption reports whether s is a numbered menu choice ("1. Yes",
 // "2. No, exit") rather than free input — i.e. leading digits then a dot.
 func looksLikeMenuOption(s string) bool {
