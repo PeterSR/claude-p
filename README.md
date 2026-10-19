@@ -411,7 +411,7 @@ stdout stays the command's own.
 docker run --rm \
   -v "$HOME/.claude:/home/claude/.claude" \
   -v "$PWD/container-claude.json:/home/claude/.claude.json" \
-  ghcr.io/petersr/claude-p:0.5.2 \
+  ghcr.io/petersr/claude-p:0.5.3 \
   claude-p --pupptyeer-daemon "hello"
 ```
 
@@ -422,7 +422,7 @@ docker run --rm \
 ### As a base image
 
 ```dockerfile
-FROM ghcr.io/petersr/claude-p:0.5.2
+FROM ghcr.io/petersr/claude-p:0.5.3
 # Add your own code; the entrypoint and PATH are inherited.
 COPY . /app
 ```
@@ -483,7 +483,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
  && rm -rf /var/lib/apt/lists/* \
  && useradd --uid 1000 --create-home claude \
  && chmod 1777 /home/claude
-COPY --from=ghcr.io/petersr/claude-p:0.5.2 /opt/claude-p/bin /opt/claude-p/bin
+COPY --from=ghcr.io/petersr/claude-p:0.5.3 /opt/claude-p/bin /opt/claude-p/bin
 ENV PATH=/opt/claude-p/bin:$PATH DISABLE_AUTOUPDATER=1 HOME=/home/claude
 USER claude
 WORKDIR /home/claude
