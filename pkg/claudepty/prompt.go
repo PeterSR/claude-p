@@ -57,23 +57,56 @@ func promptRowRemainder(line string) (rest string, ok bool) {
 	return strings.TrimSpace(strings.TrimPrefix(trimmed, promptChar)), true
 }
 
-// TrustSelection reads the trust modal's highlighted row: found is whether a
-// "❯" row naming an answer is on screen, yes whether it is the accepting one.
-// Claude Code has changed both which answer is preselected (2.1.303 puts
-// "❯ No, exit" first) and whether the rows are numbered ("❯ 1. Yes, ..."), so
-// a driver looks before it presses Enter.
+// TrustSelection reads the trust modal's highlighted row: found is whether the
+// modal's answer menu is on screen, yes whether the highlighted answer is the
+// accepting one. Claude Code has changed both which answer is preselected
+// (2.1.303 puts "❯ No, exit" first) and whether the rows are numbered
+// ("❯ 1. Yes, ..."), so a driver looks before it presses Enter.
+//
+// A bare "❯ No..." row is not enough: claude draws every user message in the
+// transcript, and the input box, with the same glyph, so a resumed or live
+// session can show "❯ now fix the trust this folder bug". The menu is only
+// recognised by its shape: a highlighted "Yes, ..." / "No, ..." row with the
+// other answer on the row directly above or below it.
 func TrustSelection(screen string) (yes, found bool) {
-	for _, line := range strings.Split(screen, "\n") {
+	lines := strings.Split(screen, "\n")
+	for i, line := range lines {
 		rest, ok := promptRowRemainder(line)
 		if !ok {
 			continue
 		}
-		answer := strings.ToLower(strings.TrimLeft(rest, "0123456789. "))
-		switch {
-		case strings.HasPrefix(answer, "yes"):
-			return true, true
-		case strings.HasPrefix(answer, "no"):
-			return false, true
+		answer, ok := trustAnswer(rest)
+		if !ok {
+			continue
+		}
+		for _, j := range []int{i - 1, i + 1} {
+			if j < 0 || j >= len(lines) {
+				continue
+			}
+			if _, glyph := promptRowRemainder(lines[j]); glyph {
+				continue
+			}
+			if other, ok := trustAnswer(strings.TrimSpace(lines[j])); ok && other != answer {
+				return answer, true
+			}
+		}
+	}
+	return false, false
+}
+
+// trustAnswer reads one trust-menu option ("Yes, I trust this folder",
+// "2. No, exit"): ok is whether it is a yes/no answer at all, yes which one.
+// The answer word must stand alone or be followed by a comma, so free text
+// such as "now ..." or "yesterday ..." is not an answer.
+func trustAnswer(option string) (yes, ok bool) {
+	if looksLikeMenuOption(option) {
+		option = strings.TrimLeft(option, "0123456789")
+		option = strings.TrimSpace(strings.TrimPrefix(option, "."))
+	}
+	answer := strings.ToLower(option)
+	for _, word := range []string{"yes", "no"} {
+		if answer == word || strings.HasPrefix(answer, word+",") {
+			return word == "yes", true
 		}
 	}
 	return false, false

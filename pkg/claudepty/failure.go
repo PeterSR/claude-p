@@ -27,7 +27,8 @@ func ClassifyInteractiveFailure(screen string) string {
 		strings.Contains(low, "approaching usage limit"),
 		strings.Contains(low, "5-hour limit"):
 		return FailureRateLimit
-	case strings.Contains(low, "do you trust") && strings.Contains(low, "folder"):
+	case strings.Contains(low, "do you trust") && strings.Contains(low, "folder"),
+		strings.Contains(low, "yes, i trust this folder"):
 		return FailureWorkspaceTrustBlocked
 	case strings.Contains(low, "detected a custom api key"):
 		// Claude pauses with a "Detected a custom API key in your

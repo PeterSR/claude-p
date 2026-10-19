@@ -97,7 +97,7 @@ func prepareSession(ctx context.Context, opts Options, sessionID, cwd string) (c
 			// prompt" failure is diagnosable (login screen, an unrecognised
 			// modal, slow boot, a nested-session oddity, ...) instead of opaque.
 			if compact := CompactScreen(screen); compact != "" {
-				fmt.Fprintf(opts.Stderr, "claudep: claude never reached the input prompt within 45s; last rendered screen:\n%s\n", compact)
+				fmt.Fprintf(opts.Stderr, "claudep: claude never reached the input prompt (%v); last rendered screen:\n%s\n", err, compact)
 			}
 			_ = sess.Close()
 			if failure := claudepty.ClassifyInteractiveFailure(screen); failure != "" {

@@ -152,6 +152,105 @@ func TestWaitForReadyViaTextWhenCursorNotVisible(t *testing.T) {
 	}
 }
 
+// trustScreen is the 2.1.303 folder trust modal with the given row
+// highlighted (0 "No, exit", 1 "Yes, I trust this folder") and a footer that
+// lets two otherwise equal screens differ.
+func trustScreen(highlight int, footer string) *Screen {
+	rows := []string{"   No, exit", "   Yes, I trust this folder"}
+	rows[highlight] = " ❯" + rows[highlight][2:]
+	return screenOf(
+		" Quick safety check: Is this a project you created or one you trust?",
+		rows[0], rows[1],
+		" Enter to confirm · Esc to cancel"+footer,
+	)
+}
+
+func waitAndWrites(t *testing.T, screens ...*Screen) ([]string, error) {
+	t.Helper()
+	f := &fakeSession{screens: screens}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := WaitForReady(ctx, f, 2*time.Second)
+	return f.writeStrings(), err
+}
+
+// TestWaitForReadyMovesToYes is the 2.1.303 layout: "No, exit" is
+// preselected, so one Down must come before the Enter.
+func TestWaitForReadyMovesToYes(t *testing.T) {
+	writes, err := waitAndWrites(t, trustScreen(0, ""), trustScreen(1, ""), screenOf("", "❯", ""))
+	if err != nil {
+		t.Fatalf("WaitForReady: %v", err)
+	}
+	if len(writes) != 2 || writes[0] != "\x1b[B" || writes[1] != "\r" {
+		t.Errorf("writes = %q, want [Down, Enter]", writes)
+	}
+}
+
+// TestWaitForReadyWaitsForRedrawAfterDown guards the wrap: a capture that
+// comes back before claude redrew still shows "No"; a second Down there
+// would wrap the two-row menu back to "No" by the time Enter lands.
+func TestWaitForReadyWaitsForRedrawAfterDown(t *testing.T) {
+	no := trustScreen(0, "")
+	writes, err := waitAndWrites(t, no, no, no, trustScreen(1, ""), screenOf("", "❯", ""))
+	if err != nil {
+		t.Fatalf("WaitForReady: %v", err)
+	}
+	if len(writes) != 2 || writes[0] != "\x1b[B" || writes[1] != "\r" {
+		t.Errorf("writes = %q, want [Down, Enter]", writes)
+	}
+}
+
+// TestWaitForReadyWaitsForRedrawWhileScreenChanges: a capture after the Down
+// can still show "No" while something else on screen moved (a status line),
+// and a quiet modal is captured at once, so neither screen identity nor a
+// capture count says the Down was handled; only a "Yes" or time does.
+func TestWaitForReadyWaitsForRedrawWhileScreenChanges(t *testing.T) {
+	writes, err := waitAndWrites(t,
+		trustScreen(0, "a"), trustScreen(0, "b"), trustScreen(0, "c"), trustScreen(0, "d"), trustScreen(0, "e"),
+		trustScreen(1, ""), screenOf("", "❯", ""))
+	if err != nil {
+		t.Fatalf("WaitForReady: %v", err)
+	}
+	if len(writes) != 2 || writes[0] != "\x1b[B" || writes[1] != "\r" {
+		t.Errorf("writes = %q, want [Down, Enter]", writes)
+	}
+}
+
+// TestWaitForReadyRefusesToConfirmNo: if Yes never comes up, fail clearly
+// rather than pressing Enter on "No, exit".
+func TestWaitForReadyRefusesToConfirmNo(t *testing.T) {
+	defer func(d time.Duration) { trustRedrawWait = d }(trustRedrawWait)
+	trustRedrawWait = 10 * time.Millisecond
+	writes, err := waitAndWrites(t, trustScreen(0, "a"), trustScreen(0, "b"), trustScreen(0, "c"), trustScreen(0, "d"))
+	if err != ErrTrustNotAccepted {
+		t.Fatalf("err = %v, want ErrTrustNotAccepted", err)
+	}
+	for _, w := range writes {
+		if w == "\r" {
+			t.Errorf("Enter pressed on a No-highlighted trust menu: %q", writes)
+		}
+	}
+}
+
+// TestWaitForReadyIgnoresTrustTextInTranscript: a resumed or live session
+// whose transcript mentions the trust prompt, with a user message drawn as
+// "❯ No, ...", is ready; nothing may be typed into it.
+func TestWaitForReadyIgnoresTrustTextInTranscript(t *testing.T) {
+	writes, err := waitAndWrites(t, screenOf(
+		"❯ No, do you trust this folder? I saw a trust this folder prompt",
+		"● Yes, the prompt asks whether you trust this folder.",
+		"────────────────────",
+		"❯ ",
+		"────────────────────",
+	))
+	if err != nil {
+		t.Fatalf("WaitForReady: %v", err)
+	}
+	if len(writes) != 0 {
+		t.Errorf("writes = %q, want none", writes)
+	}
+}
+
 func TestWaitForReadyExitedProcess(t *testing.T) {
 	f := &fakeSession{screens: []*Screen{screenOf("")}, exited: true}
 	if err := WaitForReady(context.Background(), f, time.Second); err != ErrProcessExited {

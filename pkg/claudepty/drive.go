@@ -10,12 +10,21 @@ import (
 // ErrProcessExited is returned when claude exited before the awaited event.
 var ErrProcessExited = errors.New("claude process exited")
 
+// ErrTrustNotAccepted is returned when the folder trust modal would not move
+// to its accepting answer. Confirming it anyway would pick "No, exit".
+var ErrTrustNotAccepted = errors.New("could not select Yes on the folder trust prompt")
+
 // ErrTimeout is returned when an interactive wait exhausts its budget.
 var ErrTimeout = errors.New("interactive orchestrator timeout")
 
 // readySettle is how long the screen must be quiet before we trust a snapshot
 // for readiness/trust decisions.
 const readySettle = 400 * time.Millisecond
+
+// trustRedrawWait is how long a Down on the trust menu is given to show
+// before it is taken as lost and pressed again. A variable so tests can
+// shorten it.
+var trustRedrawWait = 2 * time.Second
 
 // WaitForReady drives the "trust this folder" modal and waits for claude's
 // input prompt to appear, using rendered-screen settle (server/lib-side) rather
@@ -25,6 +34,12 @@ func WaitForReady(ctx context.Context, s PTYSession, budget time.Duration) error
 	styleHandled := false
 	trustHandled := false
 	trustMoves := 0
+	// movedAt is when the last Down was pressed. A capture can come back
+	// before claude has handled it (the settle window counts from the last
+	// output, so a quiet modal is captured at once), and the two-row menu
+	// wraps, so a second Down sent while the first is still queued would land
+	// back on "No", with an Enter pressed on the stale "Yes" queued behind it.
+	var movedAt time.Time
 
 	for time.Now().Before(deadline) {
 		select {
@@ -63,20 +78,39 @@ func WaitForReady(ctx context.Context, s PTYSession, budget time.Duration) error
 		if !trustHandled && (strings.Contains(lower, "trust this folder") || strings.Contains(lower, "do you trust")) {
 			// Which answer is preselected has changed between versions, so
 			// move to "Yes" first (Enter on "No, exit" quits claude) and only
-			// confirm once it is highlighted; the next screen shows the move.
-			yes, found := TrustSelection(screen)
-			if found && !yes && trustMoves < 3 {
-				if err := s.WriteInput([]byte("\x1b[B")); err != nil {
+			// confirm once it is highlighted. Without the menu's shape on
+			// screen the phrase is only text (a transcript about trust, or a
+			// modal still drawing), so nothing is pressed and the ready check
+			// below gets its turn.
+			if yes, found := TrustSelection(screen); found {
+				// Down from "No" always lands on "Yes", so "No" shortly
+				// after a Down means claude has not handled it yet.
+				if !yes && !movedAt.IsZero() && time.Since(movedAt) < trustRedrawWait {
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(50 * time.Millisecond):
+					}
+					continue
+				}
+				movedAt = time.Time{}
+				if !yes {
+					if trustMoves >= 3 {
+						return ErrTrustNotAccepted
+					}
+					if err := s.WriteInput([]byte("\x1b[B")); err != nil {
+						return err
+					}
+					trustMoves++
+					movedAt = time.Now()
+					continue
+				}
+				if err := s.WriteInput([]byte("\r")); err != nil {
 					return err
 				}
-				trustMoves++
+				trustHandled = true
 				continue
 			}
-			if err := s.WriteInput([]byte("\r")); err != nil {
-				return err
-			}
-			trustHandled = true
-			continue
 		}
 
 		// Primary signal: claude has parked its visible cursor in the "❯"

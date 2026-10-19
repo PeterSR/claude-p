@@ -112,6 +112,10 @@ func TestTrustSelection(t *testing.T) {
 		{"unnumbered, no first (2.1.303)", "Quick safety check: Is this a project you created or one you trust?\n ❯ No, exit\n   Yes, I trust this folder\n Enter to confirm", false, true},
 		{"unnumbered, moved to yes", "Quick safety check\n   No, exit\n ❯ Yes, I trust this folder", true, true},
 		{"no menu yet", "Do you trust the files in this folder?", false, false},
+		{"transcript user message starting with no", "❯ No, do you trust this folder?\n● Yes, it asks whether you trust this folder.\n\n❯ ", false, false},
+		{"transcript word that only starts with no", "❯ now fix the trust this folder bug\n  Yes, I trust this folder", false, false},
+		{"input row with text", "● Earlier: do you trust this folder\n❯ no thanks\n", false, false},
+		{"single highlighted answer without sibling", "Do you trust this folder?\n ❯ No, exit", false, false},
 	}
 	for _, c := range cases {
 		yes, found := TrustSelection(c.screen)
