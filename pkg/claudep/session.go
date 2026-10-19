@@ -193,9 +193,12 @@ func (s *Session) Kill() error {
 }
 
 // Shutdown stops the inner claude cleanly: two Ctrl-C's (the keystrokes a human
-// uses to quit the TUI) with a short grace period, then a Kill if it hasn't
-// exited. Unlike Close - which in daemon mode only detaches and leaves claude
-// warm for continuation - Shutdown ends the conversation regardless of backend.
+// uses to quit the TUI), confirming the "background work is running" exit modal
+// if claude raises one, then a Kill if it hasn't exited. It can take up to about
+// 5s when the modal shows and claude is slow to exit; the session lock is held
+// throughout, so other calls on this session wait for it. Unlike Close - which
+// in daemon mode only detaches and leaves claude warm for continuation -
+// Shutdown ends the conversation regardless of backend.
 func (s *Session) Shutdown() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

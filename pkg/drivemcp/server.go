@@ -555,7 +555,7 @@ func (s *Server) listTool() toolReg {
 func (s *Server) stopTool() toolReg {
 	tool := mcpgo.NewTool("stop_claude",
 		mcpgo.WithDescription(
-			"Cleanly stop a claude session and stop tracking it - the mirror of launch_claude. It sends Ctrl-C twice (the keys a human uses to quit the TUI) with a short grace period, then terminates if claude hasn't exited. This ends the conversation for good, regardless of backend: a daemon session is stopped, not left warm. Set force=true to skip the clean shutdown and hard-kill a wedged session immediately."),
+			"Cleanly stop a claude session and stop tracking it - the mirror of launch_claude. It sends Ctrl-C twice (the keys a human uses to quit the TUI), confirms claude's \"background work is running\" exit prompt if one appears, then terminates if claude still hasn't exited (up to about 5s in total). This ends the conversation for good, regardless of backend: a daemon session is stopped, not left warm. Set force=true to skip the clean shutdown and hard-kill a wedged session immediately."),
 		mcpgo.WithString("session_id", mcpgo.Required(), mcpgo.Description("Session to stop.")),
 		mcpgo.WithBoolean("force", mcpgo.Description("Hard-kill immediately instead of the clean Ctrl-C shutdown. Default: false.")),
 	)

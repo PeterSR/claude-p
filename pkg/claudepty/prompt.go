@@ -67,6 +67,26 @@ func looksLikeMenuOption(s string) bool {
 	return i > 0 && i < len(s) && s[i] == '.'
 }
 
+// HasExitConfirm reports whether the screen is claude's "background work is
+// running" exit-confirmation modal, the dialog claude shows instead of quitting
+// when the two-Ctrl-C quit would abandon running background tasks. Its first
+// option, "Exit anyway", is preselected, so a driver that wants to shut down
+// confirms with Enter. Matching the phrase alone would fire on transcript text
+// that merely mentions it, so we require the modal's shape: the highlighted
+// "❯ 1. Exit anyway" row plus its "2. Stay" sibling.
+func HasExitConfirm(screen string) bool {
+	var exitRow, stayRow bool
+	for _, line := range strings.Split(screen, "\n") {
+		trimmed := strings.ToLower(strings.TrimSpace(line))
+		if rest, ok := promptRowRemainder(trimmed); ok && strings.HasPrefix(rest, "1. exit anyway") {
+			exitRow = true
+		} else if strings.HasPrefix(trimmed, "2. stay") {
+			stayRow = true
+		}
+	}
+	return exitRow && stayRow
+}
+
 // HasStylePicker reports whether the screen is claude's first-run text-style
 // picker. Its highlighted theme row is pointed at by "❯", which ReadyForInput
 // can't tell apart from the real input prompt (the option text is unnumbered),

@@ -89,19 +89,54 @@ func SendPrompt(s PTYSession, prompt string) error {
 	return s.WriteInput([]byte("\r"))
 }
 
-// Shutdown asks claude to tear down cleanly via two Ctrl-C's, then Kills it
-// after a short grace. Used for one-shot runs that own the session; daemon
-// continuation detaches via Close instead.
+// Shutdown asks claude to tear down cleanly via two Ctrl-C's, answering the
+// "background work is running" exit-confirmation modal if it appears, and Kills
+// it as a last resort. Used for one-shot runs that own the session and for
+// stopping a live Session; daemon continuation detaches via Close instead.
+//
+// Two Ctrl-C's are how a human quits the TUI, but claude intercepts that quit
+// with an "Exit anyway / Stay" confirmation when the session has running
+// background tasks. Left unanswered, claude sits on that modal indefinitely, so
+// the graceful path would always decay into a hard Kill, bypassing claude's own
+// teardown, which is what actually stops the background work (a hard kill can
+// orphan it). So while waiting for the exit we watch for the modal, confirm
+// "Exit anyway" (Enter, its preselected option) as soon as it shows, and give
+// claude room to exit on its own before falling back to Kill.
 func Shutdown(s PTYSession) {
 	_ = s.WriteInput([]byte{0x03})
 	time.Sleep(150 * time.Millisecond)
 	_ = s.WriteInput([]byte{0x03})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
-	defer cancel()
-	if _, err := s.Wait(ctx); err != nil {
-		_ = s.Kill()
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+		if exited, _ := s.Exited(); exited {
+			return
+		}
+		if screen, ok := SettleSnapshot(s, 100*time.Millisecond, 500*time.Millisecond); ok && HasExitConfirm(screen) {
+			_ = s.WriteInput([]byte("\r")) // HasExitConfirm matched "❯ 1. Exit anyway"; Enter confirms it.
+			if waitExit(s, 3*time.Second) {
+				return
+			}
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
+	if exited, _ := s.Exited(); exited {
+		return
+	}
+	_ = s.Kill()
+}
+
+// waitExit blocks up to budget for claude to exit, reporting whether it did.
+// A nil Wait error means claude exited (with any code); the Exited re-check
+// covers a process that finished right as the budget elapsed.
+func waitExit(s PTYSession, budget time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	if _, err := s.Wait(ctx); err == nil {
+		return true
+	}
+	exited, _ := s.Exited()
+	return exited
 }
 
 // SendKeys writes text into the pty, interpreting Go-style escape sequences
