@@ -39,14 +39,15 @@ clean:
 # host arch (override DOCKER_ARCH) into a context laid out like goreleaser's
 # dockers_v2 context (<os>/<arch>/claude-p, docker/entrypoint.sh), then tags only
 # claude-p:local (never the ghcr name: a local tag would shadow the published
-# image for any FROM or COPY --from naming it). Pin overrides (a pupptyeer
-# version needs its archive's sha256 for DOCKER_ARCH too):
-#   make docker DOCKER_PUPPTYEER_VERSION=x.y.z DOCKER_PUPPTYEER_SHA256=<sha256> DOCKER_CLAUDE_CODE_VERSION=x.y.z
+# image for any FROM or COPY --from naming it). Pin overrides (the
+# pupptyeer image tag with its index digest, which must change together:
+# a tag override alone pulls by tag, never the old digest; the Claude Code
+# version):
+#   make docker DOCKER_PUPPTYEER_VERSION=x.y.z DOCKER_PUPPTYEER_DIGEST=sha256:... DOCKER_CLAUDE_CODE_VERSION=x.y.z
 DOCKER_ARCH ?= $(shell go env GOARCH)
 DOCKER_CTX  := bin/docker-ctx
 DOCKER_VER  := $(patsubst v%,%,$(VERSION))
-DOCKER_ARGS := $(if $(DOCKER_PUPPTYEER_VERSION),--build-arg PUPPTYEER_VERSION=$(DOCKER_PUPPTYEER_VERSION)) \
-	$(if $(DOCKER_PUPPTYEER_SHA256),--build-arg PUPPTYEER_SHA256_$(DOCKER_ARCH)=$(DOCKER_PUPPTYEER_SHA256)) \
+DOCKER_ARGS := $(if $(DOCKER_PUPPTYEER_VERSION),--build-arg PUPPTYEER_VERSION=$(DOCKER_PUPPTYEER_VERSION) --build-arg PUPPTYEER_DIGEST=$(DOCKER_PUPPTYEER_DIGEST)) \
 	$(if $(DOCKER_CLAUDE_CODE_VERSION),--build-arg CLAUDE_CODE_VERSION=$(DOCKER_CLAUDE_CODE_VERSION))
 
 docker:

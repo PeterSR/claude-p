@@ -1,5 +1,7 @@
 # claude-p base image: claude-p + pupptyeer + Claude Code CLI, all pinned.
 #
+# pupptyeer (with its entrypoint helper and a static tini) is taken from its own
+# published image, pinned by tag; Claude Code is downloaded and signature-checked.
 # The claude-p binary is NOT downloaded here. goreleaser (and `make docker`)
 # put the freshly built one in the build context at <os>/<arch>/claude-p,
 # because claude-p release assets are drafts while the image builds. The
@@ -11,18 +13,21 @@
 # Needs BuildKit (COPY --chmod), which buildx and current `docker build` use.
 
 ARG DEBIAN_TAG=bookworm-slim
+# The pupptyeer pin: the tag of ghcr.io/petersr/pupptyeer and its multi-arch
+# index digest, so a re-pushed tag cannot change what goes in (Docker resolves
+# by the digest when both are given). Bump both together; the digest is shown
+# by `docker buildx imagetools inspect ghcr.io/petersr/pupptyeer:<version>`.
+# An empty digest pulls by tag alone.
+ARG PUPPTYEER_VERSION=0.10.3
+ARG PUPPTYEER_DIGEST=sha256:8c24ba8eb5a3456706557598d5ac89615d69706e24752acdb33fb1513d43b755
 
-# ---- fetch: download and verify pupptyeer and Claude Code ------------------
+FROM ghcr.io/petersr/pupptyeer:${PUPPTYEER_VERSION}${PUPPTYEER_DIGEST:+@${PUPPTYEER_DIGEST}} AS pupptyeer
+
+# ---- fetch: download and verify Claude Code ------------------
 # Runs on the build host's own platform (no emulation) and fetches the files
 # for TARGETARCH, so a multi-arch build only emulates the small final stage.
 FROM --platform=$BUILDPLATFORM debian:${DEBIAN_TAG} AS fetch
 ARG TARGETARCH
-ARG PUPPTYEER_VERSION=0.10.2
-# sha256 of pupptyeer_<version>_linux_<arch>.tar.gz. Pinned here rather than
-# read from the release's checksums.txt, which sits next to the archive and so
-# cannot vouch for it. Bump together with PUPPTYEER_VERSION.
-ARG PUPPTYEER_SHA256_amd64=bd92b209c0dc3e11e5b3513d988a7ee2bc6a987bba524a7065c3a6d30695c8f7
-ARG PUPPTYEER_SHA256_arm64=6395c7135820bf60bdb362f764b56d1c96f6739a0365511420b329ebff46f0da
 ARG CLAUDE_CODE_VERSION=2.1.303
 # Anthropic's Claude Code release signing key, as published in the Claude Code
 # setup docs ("Verify binary integrity"). Each release's manifest.json is
@@ -34,16 +39,10 @@ RUN apt-get update \
 RUN set -eu; \
     mkdir -p /out /work; cd /work; \
     case "${TARGETARCH}" in \
-      amd64) cc=x64;   psum="${PUPPTYEER_SHA256_amd64}" ;; \
-      arm64) cc=arm64; psum="${PUPPTYEER_SHA256_arm64}" ;; \
+      amd64) cc=x64 ;; \
+      arm64) cc=arm64 ;; \
       *) echo "unsupported arch ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    # pupptyeer: release archive, checked against the pinned sha256.
-    name="pupptyeer_${PUPPTYEER_VERSION}_linux_${TARGETARCH}.tar.gz"; \
-    curl -fsSL --proto '=https' -o "${name}" \
-      "https://github.com/PeterSR/pupptyeer/releases/download/v${PUPPTYEER_VERSION}/${name}"; \
-    echo "${psum}  ${name}" | sha256sum -c -; \
-    tar -xzf "${name}" --no-same-owner -C /out pupptyeer; \
     # Claude Code: the exact version's binary from the official download host.
     # The manifest's signature is checked against the pinned key fingerprint,
     # then the binary against the manifest. Same artifact the native installer
@@ -71,7 +70,7 @@ RUN set -eu; \
 # ---- final ------------------------------------------------------------------
 FROM debian:${DEBIAN_TAG}
 ARG TARGETPLATFORM
-ARG PUPPTYEER_VERSION=0.10.2
+ARG PUPPTYEER_VERSION
 ARG CLAUDE_CODE_VERSION=2.1.303
 ARG CLAUDE_P_VERSION=dev
 ARG REVISION=unknown
@@ -88,25 +87,25 @@ LABEL org.opencontainers.image.title="claude-p" \
       dev.petersr.pupptyeer.version="${PUPPTYEER_VERSION}" \
       dev.petersr.claude-code.version="${CLAUDE_CODE_VERSION}"
 
-# ca-certificates: claude talks TLS. tini: its static build is the one shipped
-# in /opt/claude-p/bin, so it runs on any base. git/ripgrep-free on purpose;
+# ca-certificates: claude talks TLS. tini is pupptyeer's static build, copied
+# below into /opt/claude-p/bin, so it runs on any base. git/ripgrep-free on purpose;
 # add what your workload needs in a derived image.
 # HOME is world-writable and sticky (like /tmp), so `docker run --user <uid>`
 # with no passwd entry can still write ~/.claude.json and friends there.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates tini \
+ && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid "${CLAUDE_GID}" claude \
  && useradd --uid "${CLAUDE_UID}" --gid "${CLAUDE_GID}" --create-home --home-dir /home/claude --shell /bin/bash claude \
  && chmod 1777 /home/claude \
  && mkdir -p /opt/claude-p/bin \
- && cp /usr/bin/tini-static /opt/claude-p/bin/tini \
  && ln -s /opt/claude-p/bin/claude-p /usr/local/bin/claude-p \
  && ln -s /opt/claude-p/bin/pupptyeer /usr/local/bin/pupptyeer \
  && ln -s /opt/claude-p/bin/claude /usr/local/bin/claude
 
 # --chmod on the COPY itself: a later `RUN chmod` would duplicate the ~285MB
 # claude binary into a second layer.
+COPY --from=pupptyeer --chown=0:0 --chmod=0755 /opt/pupptyeer/bin/ /opt/claude-p/bin/
 COPY --from=fetch --chown=0:0 --chmod=0755 /out/ /opt/claude-p/bin/
 COPY --chown=0:0 --chmod=0755 ${TARGETPLATFORM}/claude-p /opt/claude-p/bin/claude-p
 # goreleaser keeps extra_files at their repo path, hence docker/ here.

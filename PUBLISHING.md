@@ -61,8 +61,9 @@ Published by the same goreleaser run (multi-arch, via QEMU + buildx), using the
 freshly built binaries, so it works while the GitHub release is still a draft.
 Before a release, check the pinned `PUPPTYEER_VERSION` and `CLAUDE_CODE_VERSION`
 defaults at the top of `docker/Dockerfile` (and the README "Docker" table) are
-the ones you want; a pupptyeer bump also updates `PUPPTYEER_SHA256_amd64` and
-`PUPPTYEER_SHA256_arm64` there. After the first push the package is private: set it to public
+the ones you want. pupptyeer comes from its published image (which must
+already be public), pinned by `PUPPTYEER_VERSION` and its index digest
+`PUPPTYEER_DIGEST`; bump both together. After the first push the package is private: set it to public
 under the GitHub package settings and link it to the repo. Validate locally with
 `make docker` and `goreleaser check`. `goreleaser release --snapshot --clean
 --skip=publish` also builds the image, but its arm64 half needs QEMU binfmt

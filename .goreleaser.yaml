@@ -50,8 +50,9 @@ archives:
 
 # Multi-arch image on ghcr.io. The freshly built linux binaries are placed in
 # the build context (linux/<arch>/claude-p), because the draft release's assets
-# are not downloadable while this runs. pupptyeer and Claude Code are fetched
-# inside the Dockerfile at the versions pinned there (build args).
+# are not downloadable while this runs. pupptyeer comes from its
+# published image and Claude Code is fetched inside the Dockerfile, both at the
+# versions pinned there (build args).
 dockers_v2:
   - id: claude-p
     ids:

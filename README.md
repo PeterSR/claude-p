@@ -380,7 +380,7 @@ slim, linux/amd64 and linux/arm64) that pins all three pieces together:
 | Piece | Where it comes from | Pinned by |
 | --- | --- | --- |
 | claude-p | the binary built by the same release | the image tag |
-| pupptyeer | its GitHub release archive, checked against a sha256 pinned in the Dockerfile | build arg `PUPPTYEER_VERSION` (0.10.2) |
+| pupptyeer | copied from its own image, `ghcr.io/petersr/pupptyeer:<version>` (the binaries, its entrypoint helper and a static tini) | build args `PUPPTYEER_VERSION` (0.10.3) and `PUPPTYEER_DIGEST`, the image's index digest |
 | Claude Code CLI | `downloads.claude.ai`: the version's `manifest.json` is checked against its GPG signature and Anthropic's pinned release key fingerprint, the binary against the manifest's sha256 | build arg `CLAUDE_CODE_VERSION` (2.1.303) |
 
 Every check fails the build when it does not match.
@@ -394,10 +394,14 @@ symlinks, which neither pins reliably nor survives `COPY --from`. Auto-update
 is switched off (`DISABLE_AUTOUPDATER=1`).
 
 Everything is a real file under `/opt/claude-p/bin` (`claude-p`, `pupptyeer`,
-`claude`, `tini`, `entrypoint.sh`), also symlinked into `/usr/local/bin`. The
+`claude`, `tini`, `entrypoint.sh`, plus pupptyeer's `pupptyeer-mcp` and
+`pupptyeer-entrypoint`), and that directory leads `PATH`; `claude-p`,
+`pupptyeer` and `claude` are also symlinked into `/usr/local/bin`. The
 process runs as user `claude` (uid/gid 1000, `HOME=/home/claude`, which is
 world-writable so any `--user` uid can use it). The
-entrypoint runs under tini, starts the pupptyeer daemon in the background
+entrypoint (a small wrapper that sets `DISABLE_AUTOUPDATER` and a default
+command, then runs pupptyeer's own helper) runs under tini, starts the pupptyeer
+daemon in the background, or reuses one already answering
 (socket `/tmp/pupptyeer/daemon.sock`, `PUPPTYEER_SOCK` is exported), waits for
 the socket, then `exec`s your command (default `claude-p --help`). The daemon
 and its ptys die with the container. The daemon banner goes to stderr, so
@@ -444,12 +448,13 @@ The rest of claude's state, onboarding and which folders are trusted, lives in
 profile claude shows, in order, a theme picker, a login screen (which valid
 mounted credentials should skip; not checked here, no credentials were used),
 and a "trust this folder" modal for the working
-directory. claude-p answers the theme picker. It also presses Enter on the
-trust modal, but in Claude Code 2.1.303 that modal preselects "No, exit", so
-Enter quits claude and the run fails ("claude process exited"). Until claude-p
-handles that, give the container a `~/.claude.json` that has finished
-onboarding and already trusts the directory claude runs in (`/home/claude`
-unless you pass `--cwd` or change the working directory):
+directory. claude-p answers the theme picker, and on the trust modal moves to
+"Yes, I trust this folder" before confirming (in Claude Code 2.1.303 the modal
+preselects "No, exit"); if it cannot get there it stops with an error rather
+than confirm "No". Still, give the container a `~/.claude.json` that has
+finished onboarding, and if you like one that already trusts the directory
+claude runs in (`/home/claude` unless you pass `--cwd` or change the working
+directory):
 
 ```sh
 echo '{"hasCompletedOnboarding": true,
@@ -461,9 +466,10 @@ and mount it as `/home/claude/.claude.json` (claude updates it in place, so
 make it writable by the container user). A separate file is better than the
 host's own `~/.claude.json`: the host's trust entries are for host paths, and
 a host claude and a container claude writing one file at once can lose each
-other's changes. Checked without credentials: with this file claude-p gets
-all the way to sending the prompt and reports "Not logged in", without it the
-run stops at the trust modal. Setting `CLAUDE_CONFIG_DIR=/home/claude/.claude`
+other's changes. Checked without credentials: with only
+`{"hasCompletedOnboarding": true}` and an untrusted working directory,
+claude-p accepts the trust modal and gets all the way to sending the prompt,
+which reports "Not logged in". Setting `CLAUDE_CONFIG_DIR=/home/claude/.claude`
 instead makes claude keep `.claude.json` inside the mounted directory, which
 starts from a fresh state and so needs the same preparation.
 
@@ -486,8 +492,7 @@ ENTRYPOINT ["/opt/claude-p/bin/tini", "-g", "--", "/opt/claude-p/bin/entrypoint.
 
 You must supply: a non-root user whose uid owns the mounted `~/.claude`,
 a HOME that user can write (set `HOME` explicitly: a `--user` uid with no
-passwd entry otherwise gets `/`; the `chmod 1777` lets any uid write it), a
-working directory matching the trusted one in `~/.claude.json` (see above),
+passwd entry otherwise gets `/`; the `chmod 1777` lets any uid write it),
 `PATH` including that directory, the entrypoint (or
 your own supervision of `pupptyeer daemon`), and CA certificates. `claude-p`,
 `pupptyeer` and `tini` are static binaries; `claude` is dynamic and needs
@@ -501,13 +506,14 @@ siblings by its own location. Tested with `python:3.13-slim`.
 ```sh
 make docker        # builds claude-p:local (only that tag, so it never shadows the published image)
 make docker DOCKER_CLAUDE_CODE_VERSION=2.1.303
-make docker DOCKER_PUPPTYEER_VERSION=0.10.2 DOCKER_PUPPTYEER_SHA256=<sha256 of the host arch archive>
+make docker DOCKER_PUPPTYEER_VERSION=0.10.3   # the pupptyeer image tag
 ```
 
 The defaults live as `ARG`s at the top of `docker/Dockerfile`; to bump one,
-edit the default (and the table above), then release. A pupptyeer bump also
-needs both archives' sha256 (`PUPPTYEER_SHA256_amd64`, `PUPPTYEER_SHA256_arm64`,
-from that release's `checksums.txt`); a Claude Code bump needs nothing else. Find the current
+edit the default (and the table above), then release. A pupptyeer bump is its
+tag plus the image's index digest (`PUPPTYEER_DIGEST`, from `docker buildx
+imagetools inspect ghcr.io/petersr/pupptyeer:<version>`), so a re-pushed tag
+cannot change what goes in; a Claude Code bump needs nothing else. Find the current
 Claude Code version with
 `curl -s https://downloads.claude.ai/claude-code-releases/latest`.
 
